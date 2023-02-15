@@ -9,7 +9,7 @@ from queue import Queue, Empty
 from carla_gym.core.obs_manager.obs_manager import ObsManagerBase
 from carla_gym.core.task_actor.common.navigation.map_utils import RoadOption
 
-from mile.data.dataset_utils import preprocess_gps
+from data.dataset_utils import preprocess_gps
 
 
 class ObsManager(ObsManagerBase):

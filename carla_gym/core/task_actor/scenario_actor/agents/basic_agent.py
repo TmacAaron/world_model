@@ -1,5 +1,5 @@
 """Adapted from https://github.com/zhejz/carla-roach/ CC-BY-NC 4.0 license."""
-
+import carla
 import numpy as np
 from .utils.local_planner import LocalPlanner
 from .utils.misc import is_within_distance_ahead, compute_yaw_difference

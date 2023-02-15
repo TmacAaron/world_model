@@ -13,7 +13,7 @@ from .core.task_actor.scenario_actor.scenario_actor_handler import ScenarioActor
 from .utils.traffic_light import TrafficLightHandler
 from .utils.dynamic_weather import WeatherHandler
 from stable_baselines3.common.utils import set_random_seed
-from mile.constants import CARLA_FPS
+from constants import CARLA_FPS
 
 logger = logging.getLogger(__name__)
 

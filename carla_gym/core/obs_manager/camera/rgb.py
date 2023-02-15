@@ -8,7 +8,8 @@ from queue import Queue, Empty
 from gym import spaces
 
 from carla_gym.core.obs_manager.obs_manager import ObsManagerBase
-from mile.constants import DISTORT_IMAGES
+
+from constants import DISTORT_IMAGES
 
 
 class ObsManager(ObsManagerBase):

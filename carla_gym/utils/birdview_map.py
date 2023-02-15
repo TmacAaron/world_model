@@ -12,7 +12,7 @@ import subprocess
 from omegaconf import OmegaConf
 
 from carla_gym.utils.traffic_light import TrafficLightHandler
-from utils.server_utils import CarlaServerManager
+# from utils.server_utils import CarlaServerManager
 
 COLOR_WHITE = (255, 255, 255)
 

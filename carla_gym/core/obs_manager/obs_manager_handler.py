@@ -3,6 +3,7 @@
 from importlib import import_module
 from gym import spaces
 
+
 class ObsManagerHandler(object):
 
     def __init__(self, obs_configs):
@@ -45,5 +46,5 @@ class ObsManagerHandler(object):
         for ev_id, ev_obs_configs in self._obs_configs.items():
             self._obs_managers[ev_id] = {}
             for obs_id, obs_config in ev_obs_configs.items():
-                ObsManager = getattr(import_module('carla_gym.core.obs_manager.'+obs_config["module"]), 'ObsManager')
+                ObsManager = getattr(import_module('carla_gym.core.obs_manager.' + obs_config["module"]), 'ObsManager')
                 self._obs_managers[ev_id][obs_id] = ObsManager(obs_config)

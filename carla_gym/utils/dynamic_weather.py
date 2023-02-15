@@ -2,7 +2,7 @@
 
 import carla
 import numpy as np
-from mile.constants import CARLA_FPS
+from constants import CARLA_FPS
 
 WEATHERS = [
     carla.WeatherParameters.Default,

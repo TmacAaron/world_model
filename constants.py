@@ -1,0 +1,2 @@
+CARLA_FPS = 25
+DISTORT_IMAGES = False
