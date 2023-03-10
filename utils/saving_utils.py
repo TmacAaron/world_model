@@ -6,6 +6,7 @@ import pandas as pd
 import logging
 import cv2
 from PIL import Image
+from tqdm import tqdm
 
 from data.dataset_utils import preprocess_birdview_and_routemap, binary_to_integer
 from constants import CARLA_FPS
@@ -58,7 +59,8 @@ class DataWriter:
                 'speed': None,
                 'route_plan': None,
                 'birdview': None,
-                'point_cloud': None
+                'point_cloud': None,
+                'point_cloud_semantic': None,
             },
             'supervision': None,
             'control_diff': None,
@@ -85,11 +87,6 @@ class DataWriter:
         if 'left_rgb' in obs and 'right_rgb' in obs:
             data_dict['obs']['left_rgb'] = obs['left_rgb']
             data_dict['obs']['right_rgb'] = obs['right_rgb']
-            con_image = np.concatenate([obs['left_rgb']['data'],
-                                        obs['central_rgb']['data'],
-                                        obs['right_rgb']['data']], axis=1)
-            data_dict['obs']['all_rgb'] = {'frame': obs['central_rgb']['frame'],
-                                           'data': con_image}
 
             if self.render_image:
                 render_rgb = np.concatenate([obs['central_rgb']['data'],
@@ -101,6 +98,9 @@ class DataWriter:
         # point cloud
         if 'lidar_points' in obs:
             data_dict['obs']['point_cloud'] = obs['lidar_points']
+
+        if 'lidar_points_semantic' in obs:
+            data_dict['obs']['point_cloud_semantic'] = obs['lidar_points_semantic']
 
         # supervision
         data_dict['supervision'] = supervision[self._ev_id]
@@ -200,6 +200,7 @@ class DataWriter:
             'birdview_path': [],
             'routemap_path': [],
             'point_cloud_path': [],
+            'point_cloud_semantic_path': [],
             'n_classes': [],  # Number of classes in the bev
         }
 
@@ -209,10 +210,11 @@ class DataWriter:
             dict_dataframe[k] = []
 
         points_list = {}
+        points_list_semantic = {}
 
         log.info(f'Saving {self._dir_path}, data_len={len(self._data_list)}')
 
-        for i, data in enumerate(self._data_list):
+        for i, data in tqdm(enumerate(self._data_list), desc='Saving data'):
             obs = data['obs']
             supervision = data['supervision']
 
@@ -236,9 +238,15 @@ class DataWriter:
                 dict_dataframe[k].append(v)
 
             image = obs['central_rgb']['data']
-            image_left = obs['left_rgb']['data']
-            image_right = obs['right_rgb']['data']
-            image_all = obs['all_rgb']['data']
+
+            if obs['left_rgb'] is not None and obs['right_rgb'] is not None:
+                image_left = obs['left_rgb']['data']
+                image_right = obs['right_rgb']['data']
+                image_all = np.concatenate([obs['left_rgb']['data'],
+                                            obs['central_rgb']['data'],
+                                            obs['right_rgb']['data']], axis=1)
+            else:
+                image_all, image_left, image_right = None, None, None
 
             # Process birdview and save as png
             birdview, route_map = preprocess_birdview_and_routemap(obs['birdview']['masks'])
@@ -250,9 +258,6 @@ class DataWriter:
             birdview = binary_to_integer(birdview, n_bits).reshape(h, w)
 
             image_path = os.path.join(f'image', f'image_{i:09d}.png')
-            image_left_path = os.path.join(f'image_left', f'image_left_{i:09d}.png')
-            image_right_path = os.path.join(f'image_right', f'image_right_{i:09d}.png')
-            image_all_path = os.path.join(f'image_all', f'image_all_{i:09d}.png')
             birdview_path = os.path.join(f'birdview', f'birdview_{i:09d}.png')
             routemap_path = os.path.join(f'routemap', f'routemap_{i:09d}.png')
             dict_dataframe['image_path'].append(image_path)
@@ -261,19 +266,27 @@ class DataWriter:
             dict_dataframe['n_classes'].append(n_bits)
             # Save RGB images
             Image.fromarray(image).save(os.path.join(self._dir_path, image_path))
-            Image.fromarray(image_left).save(os.path.join(self._dir_path, image_left_path))
-            Image.fromarray(image_right).save(os.path.join(self._dir_path, image_right_path))
-            Image.fromarray(image_all).save(os.path.join(self._dir_path, image_all_path))
             Image.fromarray(birdview, mode='I').save(os.path.join(self._dir_path, birdview_path))
             Image.fromarray(route_map, mode='L').save(os.path.join(self._dir_path, routemap_path))
+            if image_all is not None:
+                image_left_path = os.path.join(f'image_left', f'image_left_{i:09d}.png')
+                image_right_path = os.path.join(f'image_right', f'image_right_{i:09d}.png')
+                image_all_path = os.path.join(f'image_all', f'image_all_{i:09d}.png')
+                Image.fromarray(image_left).save(os.path.join(self._dir_path, image_left_path))
+                Image.fromarray(image_right).save(os.path.join(self._dir_path, image_right_path))
+                Image.fromarray(image_all).save(os.path.join(self._dir_path, image_all_path))
 
             # store point cloud
             points_list[f'{i:09d}'] = obs['point_cloud']['data']
+            points_list_semantic[f'{i:09d}'] = obs['point_cloud_semantic']['data']
 
         # save point cloud
         point_cloud_path = os.path.join(self._dir_path, 'point_clouds.npy')
+        point_cloud_semantic_path = os.path.join(self._dir_path, 'point_clouds_semantic.npy')
         np.save(point_cloud_path, points_list)
+        np.save(point_cloud_semantic_path, points_list_semantic)
         dict_dataframe['point_cloud_path'] = point_cloud_path
+        dict_dataframe['point_cloud_semantic_path'] = point_cloud_semantic_path
 
         pd_dataframe = pd.DataFrame(dict_dataframe)
         pd_dataframe.to_pickle(os.path.join(self._dir_path, 'pd_dataframe.pkl'))
