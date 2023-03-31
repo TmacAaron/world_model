@@ -109,6 +109,7 @@ class ObsManager(ObsManagerBase):
 
         self._camera_transform = carla.Transform(location, rotation)
 
+        self._world = None
         self._sensor = None
         self._queue_timeout = 10.0
         self._points_queue = None

@@ -60,6 +60,7 @@ class DataWriter:
                 'route_plan': None,
                 'birdview': None,
                 'point_cloud': None,
+                'point_cloud_multi': None,
                 'point_cloud_semantic': None,
             },
             'supervision': None,
@@ -101,6 +102,9 @@ class DataWriter:
 
         if 'lidar_points_semantic' in obs:
             data_dict['obs']['point_cloud_semantic'] = obs['lidar_points_semantic']
+
+        if 'lidar_points_multi' in obs:
+            data_dict['obs']['point_cloud_multi'] = obs['lidar_points_multi']
 
         # supervision
         data_dict['supervision'] = supervision[self._ev_id]
@@ -200,6 +204,7 @@ class DataWriter:
             'birdview_path': [],
             'routemap_path': [],
             'point_cloud_path': [],
+            'point_cloud_multi_path': [],
             'point_cloud_semantic_path': [],
             'n_classes': [],  # Number of classes in the bev
         }
@@ -210,6 +215,7 @@ class DataWriter:
             dict_dataframe[k] = []
 
         points_list = {}
+        points_list_multi = {}
         points_list_semantic = {}
 
         log.info(f'Saving {self._dir_path}, data_len={len(self._data_list)}')
@@ -265,27 +271,31 @@ class DataWriter:
             dict_dataframe['routemap_path'].append(routemap_path)
             dict_dataframe['n_classes'].append(n_bits)
             # Save RGB images
-            Image.fromarray(image).save(os.path.join(self._dir_path, image_path))
-            Image.fromarray(birdview, mode='I').save(os.path.join(self._dir_path, birdview_path))
-            Image.fromarray(route_map, mode='L').save(os.path.join(self._dir_path, routemap_path))
-            if image_all is not None:
-                image_left_path = os.path.join(f'image_left', f'image_left_{i:09d}.png')
-                image_right_path = os.path.join(f'image_right', f'image_right_{i:09d}.png')
-                image_all_path = os.path.join(f'image_all', f'image_all_{i:09d}.png')
-                Image.fromarray(image_left).save(os.path.join(self._dir_path, image_left_path))
-                Image.fromarray(image_right).save(os.path.join(self._dir_path, image_right_path))
-                Image.fromarray(image_all).save(os.path.join(self._dir_path, image_all_path))
+            # Image.fromarray(image).save(os.path.join(self._dir_path, image_path))
+            # Image.fromarray(birdview, mode='I').save(os.path.join(self._dir_path, birdview_path))
+            # Image.fromarray(route_map, mode='L').save(os.path.join(self._dir_path, routemap_path))
+            # if image_all is not None:
+            #     image_left_path = os.path.join(f'image_left', f'image_left_{i:09d}.png')
+            #     image_right_path = os.path.join(f'image_right', f'image_right_{i:09d}.png')
+            #     image_all_path = os.path.join(f'image_all', f'image_all_{i:09d}.png')
+            #     Image.fromarray(image_left).save(os.path.join(self._dir_path, image_left_path))
+            #     Image.fromarray(image_right).save(os.path.join(self._dir_path, image_right_path))
+            #     Image.fromarray(image_all).save(os.path.join(self._dir_path, image_all_path))
 
             # store point cloud
             points_list[f'{i:09d}'] = obs['point_cloud']['data']
+            points_list_multi[f'{i:09d}'] = obs['point_cloud_multi']
             points_list_semantic[f'{i:09d}'] = obs['point_cloud_semantic']['data']
 
         # save point cloud
         point_cloud_path = os.path.join(self._dir_path, 'point_clouds.npy')
+        point_cloud_multi_path = os.path.join(self._dir_path, 'point_clouds_multi.npy')
         point_cloud_semantic_path = os.path.join(self._dir_path, 'point_clouds_semantic.npy')
         np.save(point_cloud_path, points_list)
+        np.save(point_cloud_multi_path, points_list_multi)
         np.save(point_cloud_semantic_path, points_list_semantic)
         dict_dataframe['point_cloud_path'] = point_cloud_path
+        dict_dataframe['point_cloud_multi_path'] = point_cloud_multi_path
         dict_dataframe['point_cloud_semantic_path'] = point_cloud_semantic_path
 
         pd_dataframe = pd.DataFrame(dict_dataframe)
