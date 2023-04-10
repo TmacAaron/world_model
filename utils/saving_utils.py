@@ -271,16 +271,16 @@ class DataWriter:
             dict_dataframe['routemap_path'].append(routemap_path)
             dict_dataframe['n_classes'].append(n_bits)
             # Save RGB images
-            # Image.fromarray(image).save(os.path.join(self._dir_path, image_path))
-            # Image.fromarray(birdview, mode='I').save(os.path.join(self._dir_path, birdview_path))
-            # Image.fromarray(route_map, mode='L').save(os.path.join(self._dir_path, routemap_path))
-            # if image_all is not None:
-            #     image_left_path = os.path.join(f'image_left', f'image_left_{i:09d}.png')
-            #     image_right_path = os.path.join(f'image_right', f'image_right_{i:09d}.png')
-            #     image_all_path = os.path.join(f'image_all', f'image_all_{i:09d}.png')
-            #     Image.fromarray(image_left).save(os.path.join(self._dir_path, image_left_path))
-            #     Image.fromarray(image_right).save(os.path.join(self._dir_path, image_right_path))
-            #     Image.fromarray(image_all).save(os.path.join(self._dir_path, image_all_path))
+            Image.fromarray(image).save(os.path.join(self._dir_path, image_path))
+            Image.fromarray(birdview, mode='I').save(os.path.join(self._dir_path, birdview_path))
+            Image.fromarray(route_map, mode='L').save(os.path.join(self._dir_path, routemap_path))
+            if image_all is not None:
+                image_left_path = os.path.join(f'image_left', f'image_left_{i:09d}.png')
+                image_right_path = os.path.join(f'image_right', f'image_right_{i:09d}.png')
+                image_all_path = os.path.join(f'image_all', f'image_all_{i:09d}.png')
+                Image.fromarray(image_left).save(os.path.join(self._dir_path, image_left_path))
+                Image.fromarray(image_right).save(os.path.join(self._dir_path, image_right_path))
+                Image.fromarray(image_all).save(os.path.join(self._dir_path, image_all_path))
 
             # store point cloud
             points_list[f'{i:09d}'] = obs['point_cloud']['data']
