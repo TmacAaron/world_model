@@ -18,19 +18,27 @@ class ObsManager(OM):
         self._camera_transform_list = []
         self._points_queue_list = {}
         self._sensor_list = {}
-        rotation = carla.Rotation(0.0, 0.0, 0.0)
-        # self._scale = ((0.5, 0, 1), (0, 0.5, 1), (-0.5, 0, 1), (0, -0.5, 1), (0, 0, 2),
-        #                (0.5, 0.5, 0.5), (-0.5, 0.5, 0.5), (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5))
-        self._scale = ((0.5, 0, 1), (0, 0.5, 1), (-0.5, 0, 1), (0, -0.5, 1), (0, 0, 2))
+        self._rotations = ((90, 0, 0), (90, 0, 0), (90, 0, 0), (0, 90, 0), (0, 90, 0), (0, 90, 0))
+        # self._scale = ((1, 0, 1), (0, 1, 1), (-1, 0, 1), (0, -1, 1), (0, 0, 1),
+        #                (0.7, 0.7, 0.7), (-0.7, 0.7, 0.7), (-0.7, -0.7, 0.7), (0.7, -0.7, 0.7))
+        self._scale = ((1, 0, 0.8), (-1, 0, 0.8), (0, 0, 1), (0, 1, 0.8), (0, -1, 0.8), (0, 0, 1))
+        # self._scale = ((1, 1, 1), (-1, 1, 1), (-1, -1, 1), (1, -1, 1), (0, 0, 1))
+        # self._scale = ((1, 0, 1), (-1, 0, 1), (0, 0, 1),
+        #                (0.5, 1, 1), (-0.5, 1, 1), (-0.5, -1, 1), (0.5, -1, 1))
         self._box_size = (float(obs_configs['box_size'][0]),
                           float(obs_configs['box_size'][1]),
                           float(obs_configs['box_size'][2]))
         x, y, z = self._box_size
-        for x_scale, y_scale, z_scale in self._scale:
+        for (x_scale, y_scale, z_scale), (roll, pitch, yaw) in zip(self._scale, self._rotations):
             location = carla.Location(
                 x=x * x_scale,
                 y=y * y_scale,
                 z=z * z_scale
+            )
+            rotation = carla.Rotation(
+                roll=roll,
+                pitch=pitch,
+                yaw=yaw
             )
             self._camera_transform_list.append((carla.Transform(location, rotation)))
 
@@ -52,31 +60,43 @@ class ObsManager(OM):
 
     def get_observation(self):
         snap_shot = self._world.get_snapshot()
-        obs = []
-        x, y, z = self._box_size
-        for (x_scale, y_scale, z_scale), points_queue_key in zip(self._scale, self._points_queue_list):
+        points = []
+        for transf, points_queue_key in zip(self._camera_transform_list, self._points_queue_list):
             points_queue = self._points_queue_list[points_queue_key]
             assert points_queue.qsize() <= 1
-            trans = np.array([x*x_scale, y*y_scale, z*z_scale])
+            # transf_matrix = transf.get_matrix()
 
             try:
                 frame, data = points_queue.get(True, self._queue_timeout)
-                obs.append({'frame': frame,
-                            'data': data,
-                            'transformation': trans})
+                assert snap_shot.frame == frame
+                point_cloud = data['points_xyz']
+                # point_cloud = np.append(point_cloud, np.ones((point_cloud.shape[0], 1)), axis=1)
+                # point_cloud = np.dot(transf_matrix, point_cloud.T).T
+                # point_cloud = point_cloud[:, :-1]
+                ObjTag = data['ObjTag']
+                CosAngel = data['CosAngel']
+                ObjIdx = data['ObjIdx']
+                points.append(
+                    np.concatenate([point_cloud, CosAngel[:, None], ObjIdx[:, None], ObjTag[:, None]], axis=1))
+                # obs.append({'frame': frame,
+                #             'data': data,
+                #             'transformation': transf_matrix})
                 assert snap_shot.frame == frame
             except Empty:
                 raise Exception('RGB sensor took too long!')
+        points = np.concatenate(points, axis=0)
+        data_all = {
+            'points_xyz': points[:, :3],
+            'CosAngel': points[:, 3],
+            'ObjIdx': points[:, 4].astype(np.uint32),
+            'ObjTag': points[:, 5].astype(np.uint32),
+        }
+        obs = {'frame': snap_shot.frame,
+               'data': data_all}
 
         if self._render_o3d:
-            points = []
-            for obj in obs:
-                point_cloud = obj['data']['points_xyz']
-                label = obj['data']['ObjTag']
-                points.append(np.concatenate([point_cloud, label], axis=1))
-            points = np.concatenate(points, axis=0)
             self._point_list.points = o3d.utility.Vector3dVector(points[:, :3])
-            self._point_list.colors = o3d.utility.Vector3dVector(points[3])
+            self._point_list.colors = o3d.utility.Vector3dVector(points[5])
             self.vis.update_geometry(self._point_list)
             self.vis.poll_events()
             self.vis.update_renderer()
@@ -106,8 +126,16 @@ class ObsManager(OM):
 
         # Isolate the 3D points data
         points = np.array([point_cloud['x'], point_cloud['y'], point_cloud['z']]).T
+        transf_matrix = self._camera_transform_list[i].get_matrix()
 
-        self._points_queue_list[i].put((data.frame, {"points_xyz": points,
-                                                     "CosAngel": np.array(point_cloud['CosAngle']),
-                                                     "ObjIdx": np.array(point_cloud['ObjIdx']),
-                                                     "ObjTag": np.array(point_cloud['ObjTag'])}))
+        points = np.append(points, np.ones((points.shape[0], 1)), axis=1)
+        points = np.dot(transf_matrix, points.T).T
+        points = points[:, :-1]
+        idx = (-50 <= points[:, 0]) & (points[:, 0] <= 50) \
+            & (-40 <= points[:, 1]) & (points[:, 1] <= 40) \
+            & (-20 <= points[:, 2]) & (points[:, 2] <= 20)
+
+        self._points_queue_list[i].put((data.frame, {"points_xyz": points[idx],
+                                                     "CosAngel": np.array(point_cloud['CosAngle'])[idx],
+                                                     "ObjIdx": np.array(point_cloud['ObjIdx'])[idx],
+                                                     "ObjTag": np.array(point_cloud['ObjTag'])[idx]}))

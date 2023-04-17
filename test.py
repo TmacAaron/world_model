@@ -80,7 +80,14 @@ def run_single(run_name, env, data_writer, driver_dict, driver_log_dir, log_vide
 
 @ hydra.main(config_path='config', config_name='data_collect')
 def main(cfg: DictConfig):
+    # if cfg.host == 'localhost' and cfg.kill_running:
+    #     server_utils.kill_carla(cfg.port)
     log.setLevel(getattr(logging, cfg.log_level.upper()))
+
+    # start carla servers
+    # server_manager = server_utils.CarlaServerManager(
+    #     cfg.carla_sh_path, port=cfg.port, render_off_screen=cfg.render_off_screen)
+    # server_manager.start()
 
     driver_dict = {}
     obs_configs = {}
