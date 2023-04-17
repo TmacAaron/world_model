@@ -17,6 +17,7 @@ log_level: INFO
 host: localhost
 seed: 0
 no_rendering: false
+render_off_screen: true
 kill_running: true
 remove_final_steps: true
 wb_project: mile
@@ -33,7 +34,7 @@ actors:
     terminal:
       entry_point: terminal.leaderboard_dagger:LeaderboardDagger
       kwargs:
-        max_time: 10
+        max_time: 2
         no_collision: false
         no_run_rl: false
         no_run_stop: false

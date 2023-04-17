@@ -28,7 +28,7 @@ central_rgb:
 #  rotation: [0.0, 0.0, 60.0]
 lidar_points:
   module: lidar.ray_cast
-  location: [0.5, 0.0, 2.0]
+  location: [-1.0, 0.0, 2.0]
   rotation: [0.0, 0.0, 0.0]
   render_o3d: False
   show_axis: False
@@ -47,7 +47,7 @@ lidar_points:
     dropoff_zero_intensity: 0.4
 lidar_points_semantic:
   module: lidar.ray_cast_semantic
-  location: [0.5, 0.0, 2.0]
+  location: [-1.0, 0.0, 2.0]
   rotation: [0.0, 0.0, 0.0]
   render_o3d: False
   show_axis: False
@@ -58,18 +58,26 @@ lidar_points_semantic:
     points_per_second: 600000
     upper_fov: 10.0
     lower_fov: -30.0 # -30.0
-# lidar_points_multi:
- #  module: lidar.ray_cast_multi
- #  location: [-1.0, 0.0, 2.0]
- #  rotation: [0.0, 0.0, 0.0]
- #  box_size: [30, 20, 3]
- #  render_o3d: False
- #  show_axis: False
- #  lidar_options:
- #    channels: 256
- #    range: 100
- #    rotation_frequency: 25
- #    points_per_second: 600000
- #    upper_fov: 5.0
- #    lower_fov: -60.0 # -30.0
+#lidar_points_multi:
+#  module: lidar.ray_cast_multi
+#  location: [-1.0, 0.0, 2.0]
+#  rotation: [0.0, 0.0, 0.0]
+#  box_size: [20, 12, 20]
+#  render_o3d: False
+#  show_axis: False
+#  lidar_options:
+#    channels: 64
+#    range: 100
+#    rotation_frequency: 25
+#    points_per_second: 600000
+#    upper_fov: 30.0
+#    lower_fov: -30.0 # -30.0
+
+depth_semantic:
+  module: camera.depth_semantic_m
+  fov: 90
+  width: 320
+  height: 320
+  box_size: [15, 15, 15]
+  sensor_num: [2, 1]
 

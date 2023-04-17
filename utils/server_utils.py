@@ -22,9 +22,10 @@ def kill_carla(port=2005):
 
 
 class CarlaServerManager():
-    def __init__(self, carla_sh_str, port=2000, configs=None, t_sleep=5):
+    def __init__(self, carla_sh_str, port=2000, configs=None, render_off_screen=False, t_sleep=5):
         self._carla_sh_str = carla_sh_str
         self.port = port
+        self._render_off_screen = render_off_screen
         # self._root_save_dir = root_save_dir
         self._t_sleep = t_sleep
         self.env_configs = []
@@ -47,10 +48,14 @@ class CarlaServerManager():
     def start(self):
         kill_carla(self.port)
         for cfg in self.env_configs:
-            # cmd = f'CUDA_VISIBLE_DEVICES={cfg["gpu"]} bash {self._carla_sh_str} ' \
-                # f'-fps={CARLA_FPS} -quality-level=Epic -carla-rpc-port={cfg["port"]}'
-            cmd = f'{self._carla_sh_str} ' \
-                f'-fps={CARLA_FPS} -quality-level=Epic -carla-rpc-port={cfg["port"]}'
+            if self._render_off_screen:
+                cmd = f'CUDA_VISIBLE_DEVICES={cfg["gpu"]} bash {self._carla_sh_str} ' \
+                      f'-fps={CARLA_FPS} -quality-level=Epic -carla-rpc-port={cfg["port"]} -RenderOffScreen'
+            else:
+                cmd = f'CUDA_VISIBLE_DEVICES={cfg["gpu"]} bash {self._carla_sh_str} ' \
+                      f'-fps={CARLA_FPS} -quality-level=Epic -carla-rpc-port={cfg["port"]}'
+            # cmd = f'{self._carla_sh_str} ' \
+            #     f'-fps={CARLA_FPS} -quality-level=Epic -carla-rpc-port={cfg["port"]}'
             log.info(cmd)
             server_process = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
         time.sleep(self._t_sleep)

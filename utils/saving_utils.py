@@ -54,6 +54,7 @@ class DataWriter:
                 'central_rgb': None,
                 'left_rgb': None,
                 'right_rgb': None,
+                'depth_semantic': None,
                 # 'all_rgb': None,
                 'gnss': None,
                 'speed': None,
@@ -95,6 +96,10 @@ class DataWriter:
                                              obs['right_rgb']['data']], axis=0)
         elif self.render_image:
             render_rgb = obs['central_rgb']['data']
+
+        # depth_semantic
+        if 'depth_semantic' in obs:
+            data_dict['obs']['depth_semantic'] = obs['depth_semantic']
 
         # point cloud
         if 'lidar_points' in obs:
@@ -183,6 +188,7 @@ class DataWriter:
         os.makedirs(os.path.join(self._dir_path, 'image_left'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'image_right'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'image_all'), exist_ok=True)
+        os.makedirs(os.path.join(self._dir_path, 'depth_semantic'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'birdview'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'routemap'), exist_ok=True)
 
@@ -201,6 +207,8 @@ class DataWriter:
             'target_gps_next': [],
             'command_next': [],
             'image_path': [],
+            'depth_semantic_path': [],
+            'depth_semantic_trans': [],
             'birdview_path': [],
             'routemap_path': [],
             'point_cloud_path': [],
@@ -254,6 +262,11 @@ class DataWriter:
             else:
                 image_all, image_left, image_right = None, None, None
 
+            if obs['depth_semantic'] is not None:
+                depth_semantic = obs['depth_semantic']['data']
+            else:
+                depth_semantic = None
+
             # Process birdview and save as png
             birdview, route_map = preprocess_birdview_and_routemap(obs['birdview']['masks'])
             birdview, route_map = birdview.numpy(), route_map.numpy()
@@ -281,11 +294,16 @@ class DataWriter:
                 Image.fromarray(image_left).save(os.path.join(self._dir_path, image_left_path))
                 Image.fromarray(image_right).save(os.path.join(self._dir_path, image_right_path))
                 Image.fromarray(image_all).save(os.path.join(self._dir_path, image_all_path))
+            if depth_semantic is not None:
+                depth_semantic_path = os.path.join(f'depth_semantic', f'depth_semantic_{i:09d}.png')
+                Image.fromarray(depth_semantic).save(os.path.join(self._dir_path, depth_semantic_path))
+                dict_dataframe['depth_semantic_trans'].append(obs['depth_semantic']['trans'])
+                dict_dataframe['depth_semantic_path'].append(depth_semantic)
 
             # store point cloud
-            points_list[f'{i:09d}'] = obs['point_cloud']['data']
+            points_list[f'{i:09d}'] = obs['point_cloud']
             points_list_multi[f'{i:09d}'] = obs['point_cloud_multi']
-            points_list_semantic[f'{i:09d}'] = obs['point_cloud_semantic']['data']
+            points_list_semantic[f'{i:09d}'] = obs['point_cloud_semantic']
 
         # save point cloud
         point_cloud_path = os.path.join(self._dir_path, 'point_clouds.npy')
