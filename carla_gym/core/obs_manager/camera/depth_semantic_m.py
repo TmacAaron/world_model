@@ -1,4 +1,4 @@
-import time
+# import time
 
 import numpy as np
 import weakref
@@ -6,8 +6,8 @@ import copy
 import carla
 from queue import Queue, Empty
 from gym import spaces
-from matplotlib import cm
-import open3d as o3d
+# from matplotlib import cm
+# import open3d as o3d
 
 from carla_gym.core.obs_manager.obs_manager import ObsManagerBase
 
