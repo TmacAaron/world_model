@@ -298,7 +298,7 @@ class DataWriter:
                 depth_semantic_path = os.path.join(f'depth_semantic', f'depth_semantic_{i:09d}.png')
                 Image.fromarray(depth_semantic).save(os.path.join(self._dir_path, depth_semantic_path))
                 dict_dataframe['depth_semantic_trans'].append(obs['depth_semantic']['trans'])
-                dict_dataframe['depth_semantic_path'].append(depth_semantic)
+                dict_dataframe['depth_semantic_path'].append(depth_semantic_path)
 
             # store point cloud
             points_list[f'{i:09d}'] = obs['point_cloud']

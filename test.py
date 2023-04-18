@@ -193,6 +193,7 @@ def main(cfg: DictConfig):
 
     env.close()
     env = None
+    server_manager.stop()
 
     log.info(f"Finished data collection env_idx {env_idx}, {env_setup['env_id']}.")
     if env_idx+1 == len(cfg.test_suites):

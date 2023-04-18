@@ -34,7 +34,7 @@ actors:
     terminal:
       entry_point: terminal.leaderboard_dagger:LeaderboardDagger
       kwargs:
-        max_time: 300
+        max_time: 100
         no_collision: true
         no_run_rl: true
         no_run_stop: true
