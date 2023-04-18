@@ -49,7 +49,7 @@ class CarlaServerManager():
         kill_carla(self.port)
         for cfg in self.env_configs:
             if self._render_off_screen:
-                cmd = f'CUDA_VISIBLE_DEVICES={cfg["gpu"]} bash {self._carla_sh_str} ' \
+                cmd = f'{self._carla_sh_str} ' \
                       f'-fps={CARLA_FPS} -quality-level=Epic -carla-rpc-port={cfg["port"]} -RenderOffScreen'
             else:
                 cmd = f'CUDA_VISIBLE_DEVICES={cfg["gpu"]} bash {self._carla_sh_str} ' \
