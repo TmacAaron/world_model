@@ -78,6 +78,6 @@ depth_semantic:
   fov: 90
   width: 320
   height: 320
-  box_size: [15, 15, 15]
+  box_size: [10, 10, 10]
   sensor_num: [2, 1]
 

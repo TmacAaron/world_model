@@ -7,7 +7,7 @@ defaults:
   - _self_
 
 dataset_root: 'dataset'
-carla_sh_path: '/mnt/d/software/carla/0.9.14/CarlaUE4.exe'
+carla_sh_path: '/opt/carla-simulator/CarlaUE4.sh'
 port: 2000
 n_episodes: 1
 
@@ -34,10 +34,10 @@ actors:
     terminal:
       entry_point: terminal.leaderboard_dagger:LeaderboardDagger
       kwargs:
-        max_time: 2
-        no_collision: false
-        no_run_rl: false
-        no_run_stop: false
+        max_time: 100
+        no_collision: true
+        no_run_rl: true
+        no_run_stop: true
 
 agent:
   ppo:

@@ -212,7 +212,7 @@ class DataWriter:
             'birdview_path': [],
             'routemap_path': [],
             'point_cloud_path': [],
-            'point_cloud_multi_path': [],
+            # 'point_cloud_multi_path': [],
             'point_cloud_semantic_path': [],
             'n_classes': [],  # Number of classes in the bev
         }
@@ -302,18 +302,18 @@ class DataWriter:
 
             # store point cloud
             points_list[f'{i:09d}'] = obs['point_cloud']
-            points_list_multi[f'{i:09d}'] = obs['point_cloud_multi']
+            # points_list_multi[f'{i:09d}'] = obs['point_cloud_multi']
             points_list_semantic[f'{i:09d}'] = obs['point_cloud_semantic']
 
         # save point cloud
         point_cloud_path = os.path.join(self._dir_path, 'point_clouds.npy')
-        point_cloud_multi_path = os.path.join(self._dir_path, 'point_clouds_multi.npy')
+        # point_cloud_multi_path = os.path.join(self._dir_path, 'point_clouds_multi.npy')
         point_cloud_semantic_path = os.path.join(self._dir_path, 'point_clouds_semantic.npy')
         np.save(point_cloud_path, points_list)
-        np.save(point_cloud_multi_path, points_list_multi)
+        # np.save(point_cloud_multi_path, points_list_multi)
         np.save(point_cloud_semantic_path, points_list_semantic)
         dict_dataframe['point_cloud_path'] = point_cloud_path
-        dict_dataframe['point_cloud_multi_path'] = point_cloud_multi_path
+        # dict_dataframe['point_cloud_multi_path'] = point_cloud_multi_path
         dict_dataframe['point_cloud_semantic_path'] = point_cloud_semantic_path
 
         pd_dataframe = pd.DataFrame(dict_dataframe)
