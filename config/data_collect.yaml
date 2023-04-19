@@ -1,3 +1,7 @@
+hydra:
+  run:
+    dir: /mnt/d/python/dataset/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
 defaults:
   - agent:
     - mile
@@ -7,7 +11,7 @@ defaults:
   - _self_
 
 dataset_root: 'dataset'
-carla_sh_path: '/opt/carla-simulator/CarlaUE4.sh'
+carla_sh_path: '/mnt/d/software/carla/0.9.14/CarlaUE4.exe'
 port: 2000
 n_episodes: 1
 
@@ -20,10 +24,10 @@ no_rendering: false
 render_off_screen: true
 kill_running: true
 remove_final_steps: true
-wb_project: mile
-wb_notes: null
-wb_group: data_collection
-wb_tags: null
+cml_project: MasterThesis/world_model
+cml_task_name: carla_data
+cml_task_type: application
+cml_tags: null
 log_video: false
 
 actors:
@@ -34,7 +38,7 @@ actors:
     terminal:
       entry_point: terminal.leaderboard_dagger:LeaderboardDagger
       kwargs:
-        max_time: 100
+        max_time: 2
         no_collision: true
         no_run_rl: true
         no_run_stop: true

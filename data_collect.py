@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 import json
 import numpy as np
+from tqdm import tqdm
 # import wandb
 from clearml import Task
 import pandas as pd
@@ -13,6 +14,7 @@ import logging
 import subprocess
 import os
 import sys
+from constants import CARLA_FPS
 
 from stable_baselines3.common.vec_env.base_vec_env import tile_images
 
@@ -38,6 +40,7 @@ def run_single(run_name, env, data_writer, driver_dict, driver_log_dir, log_vide
     timestamp = env.timestamp
     done = {'__all__': False}
     valid = True
+    pbar = tqdm(total=CARLA_FPS*2)
     while not done['__all__']:
         driver_control = {}
         driver_supervision = {}
@@ -77,11 +80,12 @@ def run_single(run_name, env, data_writer, driver_dict, driver_log_dir, log_vide
         #     list_debug_render.append(tile_images(debug_imgs))
         #     list_data_render.append(im_rgb)
         timestamp = env.timestamp
+        pbar.update(1)
 
     return valid, list_debug_render, list_data_render, ep_stat_dict, ep_event_dict, timestamp
 
 
-@ hydra.main(config_path='config', config_name='data_collect')
+@hydra.main(config_path='config', config_name='data_collect')
 def main(cfg: DictConfig):
     # if cfg.host == 'localhost' and cfg.kill_running:
     #     server_utils.kill_carla(cfg.port)
@@ -166,8 +170,8 @@ def main(cfg: DictConfig):
     video_dir.mkdir(parents=True, exist_ok=True)
 
     # init wandb
-    task = Task.init(project_name=cfg.cml_project, name=cml_task_name, task_type=cfg.cml_task_type, tags=cfg.cml_tags,
-                     continue_last_task=cml_task_id)
+    task = Task.init(project_name=cfg.cml_project, task_name=cml_task_name, task_type=cfg.cml_task_type,
+                     tags=cfg.cml_tags, continue_last_task=cml_task_id)
     task.connect(cfg)
     cml_logger = task.get_logger()
     with open(cml_checkpoint_path, 'w') as f:
@@ -230,7 +234,7 @@ def main(cfg: DictConfig):
             iteration=idx_episode,
             table_plot=pd.DataFrame({'total_step': timestamp['step'],
                                      'fps': timestamp['step'] / timestamp['relative_wall_time']
-                                     }, index=['time']), step=idx_episode)
+                                     }, index=['time']))
 
         # save statistics
         # for actor_id, ep_stat in ep_stat_dict.items():
