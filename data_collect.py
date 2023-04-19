@@ -123,7 +123,7 @@ def main(cfg: DictConfig):
     # check h5 birdview maps have been generated
     config_utils.check_h5_maps(cfg.test_suites, obs_configs, cfg.carla_sh_path)
 
-    last_checkpoint_path = f'{hydra.utils.get_original_cwd()}/outputs/port_{cfg.port}_checkpoint.txt'
+    last_checkpoint_path = f'{cfg.work_dir}/outputs/port_{cfg.port}_checkpoint.txt'
     if cfg.resume and os.path.isfile(last_checkpoint_path):
         with open(last_checkpoint_path, 'r') as f:
             env_idx = int(f.read())
@@ -131,7 +131,7 @@ def main(cfg: DictConfig):
         env_idx = 0
 
     # resume task_idx from ep_stat_buffer_{env_idx}.json
-    ep_state_buffer_json = f'{hydra.utils.get_original_cwd()}/outputs/port_{cfg.port}_ep_stat_buffer_{env_idx}.json'
+    ep_state_buffer_json = f'{cfg.work_dir}/outputs/port_{cfg.port}_ep_stat_buffer_{env_idx}.json'
     if cfg.resume and os.path.isfile(ep_state_buffer_json):
         ep_stat_buffer = json.load(open(ep_state_buffer_json, 'r'))
         ckpt_task_idx = len(ep_stat_buffer['hero'])
@@ -142,7 +142,7 @@ def main(cfg: DictConfig):
             ep_stat_buffer[actor_id] = []
 
     # resume clearml task
-    cml_checkpoint_path = f'{hydra.utils.get_original_cwd()}/outputs/port_{cfg.port}_cml_task_id.txt'
+    cml_checkpoint_path = f'{cfg.work_dir}/outputs/port_{cfg.port}_cml_task_id.txt'
     if cfg.resume and os.path.isfile(cml_checkpoint_path):
         with open(cml_checkpoint_path, 'r') as f:
             cml_task_id = f.read()
@@ -159,7 +159,7 @@ def main(cfg: DictConfig):
     im_stack_idx = [-1]
     cml_task_name = f'{dataset_root.name}'
 
-    dataset_dir = Path(os.path.join(cfg.dataset_root, cfg.test_suites[0]['env_configs']['carla_map']))
+    dataset_dir = Path(os.path.join(cfg.dataset_root, cfg.test_suites[env_idx]['env_configs']['carla_map']))
     dataset_dir.mkdir(parents=True, exist_ok=True)
 
     diags_dir = Path('diagnostics')

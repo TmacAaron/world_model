@@ -1,6 +1,9 @@
 hydra:
   run:
-    dir: /mnt/d/python/dataset/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ${work_dir}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+#    dir: /mnt/d/python/dataset/outputs
+
+work_dir: /mnt/d/python/dataset/outputs
 
 defaults:
   - agent:
@@ -16,7 +19,7 @@ port: 2000
 n_episodes: 1
 
 ev_id: hero
-resume: false
+resume: true
 log_level: INFO
 host: localhost
 seed: 0
