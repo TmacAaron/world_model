@@ -15,7 +15,7 @@ data_collect () {
   python -u data_collect.py --config-name data_collect
 }
 
-#source ~/miniconda3/etc/profile.d/conda.sh
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate carla
 
 # Remove checkpoint files
