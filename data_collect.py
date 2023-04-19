@@ -25,7 +25,7 @@ from agents.rl_birdview.utils.wandb_callback import WandbCallback
 log = logging.getLogger(__name__)
 
 
-def run_single(run_name, env, data_writer, driver_dict, driver_log_dir, log_video, remove_final_steps):
+def run_single(run_name, env, data_writer, driver_dict, driver_log_dir, log_video, remove_final_steps, pbar):
     list_debug_render = []
     list_data_render = []
     ep_stat_dict = {}
@@ -40,7 +40,7 @@ def run_single(run_name, env, data_writer, driver_dict, driver_log_dir, log_vide
     timestamp = env.timestamp
     done = {'__all__': False}
     valid = True
-    pbar = tqdm(total=CARLA_FPS*2)
+    # pbar = tqdm(total=CARLA_FPS*2)
     while not done['__all__']:
         driver_control = {}
         driver_supervision = {}
@@ -195,8 +195,12 @@ def main(cfg: DictConfig):
     for task_idx in range(ckpt_task_idx, n_episodes_per_env):
         idx_episode = task_idx + n_episodes_per_env * env_idx
         run_name = f'{idx_episode:04}'
+        log.info(f"Start data collection env_idx {env_idx}, task_idx {task_idx}, run_name {run_name}")
 
         while True:
+            pbar = tqdm(
+                total=CARLA_FPS*cfg.run_time,
+                desc=f"Env {env_idx:02} / {len(cfg.test_suites):02} - Task {task_idx:04} / {n_episodes_per_env:04}")
             env.set_task_idx(np.random.choice(env.num_tasks))
 
             run_info = {
@@ -218,7 +222,8 @@ def main(cfg: DictConfig):
             valid, list_debug_render, list_data_render, ep_stat_dict, ep_event_dict, timestamp = run_single(
                 run_name, env, data_writer, driver_dict, driver_log_dir,
                 cfg.log_video,
-                cfg.remove_final_steps)
+                cfg.remove_final_steps,
+                pbar)
 
             if valid:
                 break

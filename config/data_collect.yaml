@@ -17,6 +17,7 @@ dataset_root: 'dataset'
 carla_sh_path: '/mnt/d/software/carla/0.9.14/CarlaUE4.exe'
 port: 2000
 n_episodes: 1
+run_time: ${actors.hero.terminal.kwargs.max_time}
 
 ev_id: hero
 resume: true
