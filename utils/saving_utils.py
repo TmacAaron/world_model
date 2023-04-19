@@ -228,7 +228,7 @@ class DataWriter:
 
         log.info(f'Saving {self._dir_path}, data_len={len(self._data_list)}')
 
-        for i, data in tqdm(enumerate(self._data_list), desc='Saving data'):
+        for i, data in enumerate(tqdm(self._data_list, desc='Saving data')):
             obs = data['obs']
             supervision = data['supervision']
 
