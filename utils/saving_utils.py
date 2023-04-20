@@ -223,7 +223,7 @@ class DataWriter:
             dict_dataframe[k] = []
 
         points_list = {}
-        points_list_multi = {}
+        # points_list_multi = {}
         points_list_semantic = {}
 
         log.info(f'Saving {self._dir_path}, data_len={len(self._data_list)}')

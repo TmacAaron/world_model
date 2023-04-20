@@ -111,13 +111,13 @@ def get_all_points(depth, semantic, fov=90, size=(320, 320), offset=(10, 10, 10)
     sem_list = np.concatenate(sem_list, axis=0)
     points_list[:, 2] = -points_list[:, 2]
     points_list[:, :2] = -points_list[:, :2][:, ::-1]
-    if mask_ego:
-        if type(mask_ego) in [list, tuple, np.ndarray]:
+    if mask_ego is not False:
+        if type(mask_ego) is not bool:
             mask_ego = np.asarray(mask_ego)
             ego_box = np.array([-mask_ego, mask_ego])
             ego_box[0, 2] = 0
         else:
-            ego_box = np.array([[-2.5, -1.1, 0], [2.2, 1.1, 2]])
+            ego_box = np.array([[-2.5, -1.1, 0], [2.5, 1.1, 2]])
         ego_idx = ((ego_box[0] < points_list) & (points_list < ego_box[1])).all(axis=1)
         sem_list[ego_idx] = 255
     return points_list, sem_list

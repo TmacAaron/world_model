@@ -1,5 +1,4 @@
 import numpy as np
-
 from data_preprocessing import *
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -7,7 +6,7 @@ from pathlib import Path
 import scipy.sparse as sp
 import re
 from tqdm import tqdm
-import clearml
+from clearml import Task
 import logging
 
 log = logging.getLogger(__name__)
@@ -33,7 +32,7 @@ def main(cfg: DictConfig):
         for file in tqdm(file_list[:250], desc=f'{i+1:04} / {len(data_paths):04}'):
             depth, semantic, _ = read_img(file)
             points_list, sem_list = get_all_points(
-                depth, semantic, fov=90, size=(320, 320), offset=(10, 10, 10), mask_ego=(2.5, 1.1, 2))
+                depth, semantic, fov=cfg.fov, size=cfg.size, offset=cfg.offset, mask_ego=cfg.mask_ego)
             voxel_points, semantics, points_filtered = voxel_filter(points_list, sem_list, cfg.voxel_size, cfg.center)
             data = np.concatenate([voxel_points, semantics[:, None]], axis=1)
             voxels = np.zeros(shape=(2 * np.asarray(cfg.center) / cfg.voxel_size).astype(int), dtype=np.uint8)
