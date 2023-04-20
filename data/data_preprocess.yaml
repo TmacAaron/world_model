@@ -1,0 +1,14 @@
+root: /mnt/d/python/dataset/0418
+#data_path: ${root}/2023-04-19/17-32-11/dataset/Town01/0000/depth_semantic
+
+#date: 2023-04-19
+#time: 17-32-11
+#town: Town01
+#run_name: 0000
+voxel_size: 0.25
+center: [50, 50, 10]
+
+cml_project: MasterThesis/world_model
+cml_task_name: voxelization
+cml_task_type: data_processing
+cml_tags: null

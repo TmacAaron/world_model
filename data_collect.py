@@ -157,7 +157,7 @@ def main(cfg: DictConfig):
     dataset_root = Path(cfg.dataset_root)
     dataset_root.mkdir(parents=True, exist_ok=True)
     im_stack_idx = [-1]
-    cml_task_name = f'{dataset_root.name}'
+    # cml_task_name = f'{dataset_root.name}'
 
     dataset_dir = Path(os.path.join(cfg.dataset_root, cfg.test_suites[env_idx]['env_configs']['carla_map']))
     dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -170,7 +170,7 @@ def main(cfg: DictConfig):
     video_dir.mkdir(parents=True, exist_ok=True)
 
     # init wandb
-    task = Task.init(project_name=cfg.cml_project, task_name=cml_task_name, task_type=cfg.cml_task_type,
+    task = Task.init(project_name=cfg.cml_project, task_name=cfg.cml_task_name, task_type=cfg.cml_task_type,
                      tags=cfg.cml_tags, continue_last_task=cml_task_id)
     task.connect(cfg)
     cml_logger = task.get_logger()
