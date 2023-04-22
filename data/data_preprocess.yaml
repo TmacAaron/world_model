@@ -1,6 +1,7 @@
 root: /mnt/d/python/dataset/0418
 #data_path: ${root}/2023-04-19/17-32-11/dataset/Town01/0000/depth_semantic
 
+n_process: 4
 #date: 2023-04-19
 #time: 17-32-11
 #town: Town01

@@ -1,7 +1,7 @@
 import numpy as np
-import open3d as o3d
+# import open3d as o3d
 import cv2
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 
 # LABEL = np.array([
@@ -140,25 +140,27 @@ def voxel_filter(pcd, sem, voxel_size, center, center_low=True):
     h_idx = np.argsort(h)
     h, hxyz, sem_b, pcd_b, hmod = h[h_idx], hxyz[h_idx], sem_b[h_idx], pcd_b[h_idx], hmod[h_idx]
     h_n, indices = np.unique(h, return_index=True)
-    n = h_n.shape[0]
-    voxels = np.zeros((n, 3), dtype=np.uint16)
-    semantics = np.zeros((n, ), dtype=np.uint8)
-    points_f = np.zeros((n, 3))
+    n_f = h_n.shape[0]
+    n_all = h.shape[0]
+    voxels = np.zeros((n_f, 3), dtype=np.uint16)
+    semantics = np.zeros((n_f, ), dtype=np.uint8)
+    # points_f = np.zeros((n_f, 3))
+    road_idx = np.where(LABEL_CLASS == 'roadlines')[0][0]
     # voxels = []
     # semantics = []
     # points_f = []
-    for i in range(n):
+    for i in range(n_f):
         # idx_ = (h == h_n[i])
-        idx_ = np.arange(indices[i], indices[i+1]) if i < n - 1 else np.arange(indices[i], h.shape[0])
+        idx_ = np.arange(indices[i], indices[i+1]) if i < n_f - 1 else np.arange(indices[i], n_all)
         dis = np.sum(hmod[idx_] ** 2, axis=1)
-        road_idx = np.where(LABEL_CLASS == 'roadlines')[0][0]
         semantic = sem_b[idx_][np.argmin(dis)] if not np.isin(sem_b[idx_], road_idx).any() else road_idx
-        # semantic = np.bincount(sem_b[idx_]).argmax()
+        # semantic = np.bincount(sem_b.squeeze()[idx_]).argmax() if not np.isin(sem_b[idx_], road_idx).any() else road_idx
         voxels[i] = hxyz[idx_][0]
         semantics[i] = semantic
-        points_f[i] = pcd_b[idx_].mean(axis=0) - center
+        # points_f[i] = pcd_b[idx_].mean(axis=0) - center
+        # points_f[i][2] += center[2] / 2
         # voxels.append(hxyz[idx_][0])
         # semantics.append(semantic)
         # points_f.append(pcd_b[idx_].mean(axis=0) - center)
 
-    return voxels, semantics, points_f
+    return voxels, semantics
