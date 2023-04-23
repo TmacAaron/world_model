@@ -1,0 +1,13 @@
+LOG_DIR: 'tensorboard_logs'
+TAG: 'mile'
+
+GPUS: 1
+BATCHSIZE: 1
+STEPS: 100000
+VAL_CHECK_INTERVAL: 5000
+
+RECEPTIVE_FIELD: 3
+FUTURE_HORIZON: 3
+
+DATASET:
+  DATAROOT: '/mnt/d/python/dataset/test/'
