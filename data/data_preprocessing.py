@@ -180,10 +180,10 @@ def transform_pcd(xyz, transition):
 def process_pcd(lidar_unprocessed, transition):
     xyz = lidar_unprocessed['data']['points_xyz']
     xyz = transform_pcd(xyz, transition)
-    if lidar_unprocessed['data'].keys() == 2:
+    if len(lidar_unprocessed['data'].keys()) == 2:
         intensity = lidar_unprocessed['data']['intensity']
         return np.concatenate([xyz, intensity[:, None]], axis=1)
-    elif lidar_unprocessed['data'].keys() == 4:
+    elif len(lidar_unprocessed['data'].keys()) == 4:
         sem = lidar_unprocessed['data']['ObjTag']
         idx = lidar_unprocessed['data']['ObjIdx']
         cos = lidar_unprocessed['data']['CosAngel']
