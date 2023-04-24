@@ -31,9 +31,12 @@ CN = CfgNode
 _C = CN()
 _C.LOG_DIR = 'tensorboard_logs'
 _C.TAG = 'default'
+_C.CML_PROJECT = ''
+_C.CML_TASK = ''
+_C.CML_TYPE = ''
 
 _C.GPUS = 1  # how many gpus to use
-_C.PRECISION = 16  # 16bit or 32bit
+_C.PRECISION = '16-mixed'  # 16bit or 32bit
 _C.BATCHSIZE = 3
 _C.STEPS = 50000
 _C.N_WORKERS = 4
@@ -51,6 +54,7 @@ _C.FUTURE_HORIZON = 1
 _C.OPTIMIZER = CN()
 _C.OPTIMIZER.LR = 1e-4
 _C.OPTIMIZER.WEIGHT_DECAY = 0.01
+_C.OPTIMIZER.ACCUMULATE_GRAD_BATCHES = 1
 
 _C.SCHEDULER = CN()
 _C.SCHEDULER.NAME = 'OneCycleLR'
@@ -62,7 +66,6 @@ _C.SCHEDULER.PCT_START = 0.2
 _C.DATASET = CN()
 _C.DATASET.DATAROOT = ''
 _C.DATASET.VERSION = 'trainval'
-_C.DATASET.FREQUENCY = 25  # in Hz
 _C.DATASET.STRIDE_SEC = 0.2  # stride between two frames
 _C.DATASET.FILTER_BEGINNING_OF_RUN_SEC = 1.0  # in seconds. the beginning of the run is stationary.
 _C.DATASET.FILTER_NORM_REWARD = 0.6  # filter runs that have a normalised reward below this value.
@@ -84,7 +87,7 @@ _C.IMAGE.CAMERA_ROTATION = [0.0, 0.0, 0.0]
 _C.IMAGE.IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _C.IMAGE.IMAGENET_STD = (0.229, 0.224, 0.225)
 
-_C.IMAGE.AUGMENTATION = CN() # image augmentations
+_C.IMAGE.AUGMENTATION = CN()  # image augmentations
 _C.IMAGE.AUGMENTATION.BLUR_PROB = .3
 _C.IMAGE.AUGMENTATION.BLUR_WINDOW = 5
 _C.IMAGE.AUGMENTATION.BLUR_STD = [.1, 1.7]
@@ -192,6 +195,10 @@ _C.LOSSES.WEIGHT_REWARD = 0.1
 _C.LOSSES.WEIGHT_PROBABILISTIC = 1e-3
 _C.LOSSES.KL_BALANCING_ALPHA = 0.75
 
+# pre_trained ckpt path
+_C.PRETRAINED = CN()
+_C.PRETRAINED.PATH = ''
+
 # There parameters are only used to benchmark other models.
 _C.EVAL = CN()
 _C.EVAL.RGB_SUPERVISION = False
@@ -234,12 +241,33 @@ def get_parser():
     return parser
 
 
+def _find_extra_keys(dict1, dict2, path=''):
+    """
+    Recursively finds keys that exist in dict2 but not in dict1.
+    Returns the full path of the missing keys, including the parent key names.
+    """
+    results = []
+    for key in dict2.keys():
+        new_path = f"{path}.{key}" if path else key
+        if key in dict1:
+            if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
+                results.extend(_find_extra_keys(dict1[key], dict2[key], new_path))
+        else:
+            results.append(new_path)
+        results.sort()
+    return results
+
+
 def get_cfg(args=None, cfg_dict=None):
     """ First get default config. Then merge cfg_dict. Then merge according to args. """
 
     cfg = _C.clone()
 
     if cfg_dict is not None:
+        extra_keys = _find_extra_keys(cfg, cfg_dict)
+        if len(extra_keys) > 0:
+            print(f"Warning - the cfg_dict merging into the main cfg has keys that do not exist in main: {extra_keys}")
+            cfg.set_new_allowed(True)
         cfg.merge_from_other_cfg(CfgNode(cfg_dict))
 
     if args is not None:

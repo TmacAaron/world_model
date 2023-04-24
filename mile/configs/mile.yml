@@ -1,13 +1,23 @@
 LOG_DIR: 'tensorboard_logs'
 TAG: 'mile'
 
+CML_PROJECT: 'MasterThesis/world_model'
+CML_TASK: 'mile'
+CML_TYPE: 'training'
+
 GPUS: 1
 BATCHSIZE: 1
 STEPS: 100000
 VAL_CHECK_INTERVAL: 5000
 
+OPTIMIZER:
+  ACCUMULATE_GRAD_BATCHES: 8
+
 RECEPTIVE_FIELD: 3
 FUTURE_HORIZON: 3
+
+PRETRAINED:
+  PATH: ''
 
 DATASET:
   DATAROOT: '/mnt/d/python/dataset/test/'

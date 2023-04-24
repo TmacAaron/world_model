@@ -4,10 +4,8 @@ import socket
 import time
 
 import lightning.pytorch as pl
-# from pytorch_lightning.plugins import DDPPlugin
-# from lightning.pytorch.strategies import DDPStrategy
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
-from lightning.pytorch.callbacks import ModelSummary
+from lightning.pytorch.callbacks import ModelSummary, LearningRateMonitor
 
 from mile.config import get_parser, get_cfg
 from mile.data.dataset import DataModule
@@ -17,7 +15,7 @@ from clearml import Task
 
 
 class SaveGitDiffHashCallback(pl.Callback):
-    def on_train_start(self, trainer, pl_model):
+    def setup(self, trainer, pl_model, stage):
         repo = git.Repo()
         trainer.git_hash = repo.head.object.hexsha
         trainer.git_diff = repo.git.diff(repo.head.commit.tree)
@@ -32,8 +30,8 @@ def main():
     args = get_parser().parse_args()
     cfg = get_cfg(args)
 
-    # task = Task.init(project_name='MasterThesis/world_model', task_name='MILE', task_type='training', tags=cfg.TAG)
-    # task.connect(cfg)
+    task = Task.init(project_name=cfg.CML_PROJECT, task_name=cfg.CML_TASK, task_type=cfg.CML_TYPE, tags=cfg.TAG)
+    task.connect(cfg)
 
     data = DataModule(cfg)
     model = WorldModelTrainer(cfg.convert_to_dict())
@@ -44,9 +42,9 @@ def main():
     logger = pl.loggers.TensorBoardLogger(save_dir=save_dir)
 
     callbacks = [
-        SaveGitDiffHashCallback(),
         ModelSummary(),
-        pl.callbacks.LearningRateMonitor(),
+        SaveGitDiffHashCallback(),
+        LearningRateMonitor(),
         ModelCheckpoint(
             save_dir, every_n_train_steps=cfg.VAL_CHECK_INTERVAL,
         ),
@@ -73,6 +71,8 @@ def main():
         val_check_interval=cfg.VAL_CHECK_INTERVAL,
         limit_val_batches=limit_val_batches,
         # use_distributed_sampler=replace_sampler_ddp,
+        accumulate_grad_batches=cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
+        num_sanity_val_steps=0,
         profiler='simple',
     )
 

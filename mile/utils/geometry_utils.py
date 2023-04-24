@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from mile.data.dataset_utils import preprocess_gps
 
 
 def bev_params_to_intrinsics(size, scale, offsetx):
@@ -56,3 +57,33 @@ def get_out_of_view_mask(cfg):
     mask = ~mask[::-1]
     mask_behind_ego_vehicle = np.ones((int(camera_offset / resolution), mask.shape[1]), dtype=np.bool)
     return np.vstack([mask, mask_behind_ego_vehicle])
+
+
+def calculate_geometry(image_fov, height, width, forward, right, up, pitch, yaw, roll):
+    """Intrinsics and extrinsics for a single camera.
+    See https://github.com/bradyz/carla_utils_fork/blob/dynamic-scene/carla_utils/leaderboard/camera.py
+    and https://github.com/bradyz/carla_utils_fork/blob/dynamic-scene/carla_utils/recording/sensors/camera.py
+    """
+    f = width / (2 * np.tan(image_fov * np.pi / 360.0))
+    cx = width / 2
+    cy = height / 2
+    intrinsics = np.float32([[f, 0, cx], [0, f, cy], [0, 0, 1]])
+    extrinsics = get_extrinsics(forward, right, up, pitch, yaw, roll)
+    return intrinsics, extrinsics
+
+
+def get_extrinsics(forward, right, up, pitch, yaw, roll):
+    # After multiplying the image coordinates by in the inverse intrinsics,
+    # the resulting coordinates are defined with the axes (right, down, forward)
+    assert pitch == yaw == roll == 0.0
+
+    # After multiplying by the extrinsics, we want the axis to be (forward, left, up), and centered in the
+    # inertial center of the ego-vehicle.
+    mat = np.float32([
+        [0,  0,  1, forward],
+        [-1, 0,  0, -right],
+        [0,  -1, 0, up],
+        [0,  0,  0, 1],
+    ])
+
+    return mat
