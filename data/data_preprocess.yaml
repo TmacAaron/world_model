@@ -13,6 +13,8 @@ mask_ego: [2.5, 1.1, 2]
 voxel_size: 0.25
 center: [50, 50, 10]
 
+lidar_transition: [-1.0, 0.0, 2.0]
+
 cml_project: MasterThesis/world_model
 cml_task_name: voxelization
 cml_task_type: data_processing

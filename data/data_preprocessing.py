@@ -74,6 +74,11 @@ def read_img(file):
     return depth, semantic, depth_color
 
 
+def load_lidar(file):
+    data = np.load(file, allow_pickle=True).item()
+    return data
+
+
 def depth2pcd(depth, semantic, fov):
     h, w = depth.shape
     f = w / (2.0 * np.tan(fov * np.pi / 360.0))
@@ -164,3 +169,22 @@ def voxel_filter(pcd, sem, voxel_size, center, center_low=True):
         # points_f.append(pcd_b[idx_].mean(axis=0) - center)
 
     return voxels, semantics
+
+
+def transform_pcd(xyz, transition):
+    xyz[:, 1] *= -1
+    xyz += np.asarray(transition)
+    return xyz
+
+
+def process_pcd(lidar_unprocessed, transition):
+    xyz = lidar_unprocessed['data']['points_xyz']
+    xyz = transform_pcd(xyz, transition)
+    if lidar_unprocessed['data'].keys() == 2:
+        intensity = lidar_unprocessed['data']['intensity']
+        return np.concatenate([xyz, intensity[:, None]], axis=1)
+    elif lidar_unprocessed['data'].keys() == 4:
+        sem = lidar_unprocessed['data']['ObjTag']
+        idx = lidar_unprocessed['data']['ObjIdx']
+        cos = lidar_unprocessed['data']['CosAngel']
+        return {'points': xyz, 'semantics': sem, 'ObjIdx': idx, 'CosAngel': cos}

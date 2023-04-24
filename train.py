@@ -11,7 +11,7 @@ from mile.config import get_parser, get_cfg
 from mile.data.dataset import DataModule
 from mile.trainer import WorldModelTrainer
 
-from clearml import Task
+# from clearml import Task
 
 
 class SaveGitDiffHashCallback(pl.Callback):
@@ -30,8 +30,8 @@ def main():
     args = get_parser().parse_args()
     cfg = get_cfg(args)
 
-    task = Task.init(project_name=cfg.CML_PROJECT, task_name=cfg.CML_TASK, task_type=cfg.CML_TYPE, tags=cfg.TAG)
-    task.connect(cfg)
+    # task = Task.init(project_name=cfg.CML_PROJECT, task_name=cfg.CML_TASK, task_type=cfg.CML_TYPE, tags=cfg.TAG)
+    # task.connect(cfg)
 
     data = DataModule(cfg)
     model = WorldModelTrainer(cfg.convert_to_dict())

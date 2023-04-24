@@ -69,6 +69,12 @@ def main(cfg: DictConfig):
     data_paths = sorted([p for p in root_path.glob('**/depth_semantic') if p.is_dir()])
     n_files = len([f for f in root_path.glob('**/depth_semantic/*.png')])
 
+    if not root_path.exists() or n_files == 0:
+        print('Root Path does not EXSIT or there are NO LEGAL files!!!')
+        return
+
+    log.info(f'{n_files} will be proceed.')
+
     parent, child = Pipe()
     main_thread = Thread(target=progress_bar_total, args=(parent, n_files, "Total"))
     main_thread.start()

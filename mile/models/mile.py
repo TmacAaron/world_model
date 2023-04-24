@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import timm
 
-from mile.constants import CARLA_FPS, DISPLAY_SEGMENTATION
+from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
 from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy
 from mile.models.frustum_pooling import FrustumPooling

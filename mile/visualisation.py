@@ -1,11 +1,10 @@
-import os
 import matplotlib.pylab
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import torch
 import torchvision.transforms.functional as tvf
 
-from mile.constants import EGO_VEHICLE_DIMENSION, BIRDVIEW_COLOURS
+from constants import EGO_VEHICLE_DIMENSION, BIRDVIEW_COLOURS
 
 
 DEFAULT_COLORMAP = matplotlib.pylab.cm.jet

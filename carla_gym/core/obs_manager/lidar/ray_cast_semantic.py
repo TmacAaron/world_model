@@ -9,6 +9,7 @@ from matplotlib import cm
 import open3d as o3d
 
 from carla_gym.core.obs_manager.obs_manager import ObsManagerBase
+from constants import CARLA_FPS
 
 LABEL_COLORS = np.array([
     (0, 0, 0),  # unlabeled
@@ -96,6 +97,9 @@ class ObsManager(ObsManagerBase):
         self._lidar_options = obs_configs['lidar_options']
         self._render_o3d = obs_configs["render_o3d"]
         self._show_axis = obs_configs["show_axis"]
+
+        # rewrite the 'rotation_frequency' to the same as carla_fps
+        self._lidar_options['rotation_frequency'] = CARLA_FPS
 
         # Coordinates are forward-right-up https://carla.readthedocs.io/en/latest/ref_sensors/
         location = carla.Location(

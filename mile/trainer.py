@@ -8,7 +8,7 @@ from mile.config import get_cfg
 from mile.models.mile import Mile
 from mile.losses import SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss
 from mile.models.preprocess import PreProcess
-from mile.constants import BIRDVIEW_COLOURS
+from constants import BIRDVIEW_COLOURS
 
 
 class WorldModelTrainer(pl.LightningModule):
@@ -163,7 +163,7 @@ class WorldModelTrainer(pl.LightningModule):
 
         # Visualisation
         if prefix == 'train':
-            visualisation_criteria = self.global_step % self.cfg.VAL_CHECK_INTERVAL == 0
+            visualisation_criteria = self.global_step % self.cfg.LOG_VIDEO_INTERVAL == 0
         else:
             visualisation_criteria = batch_idx == 0
         if visualisation_criteria:

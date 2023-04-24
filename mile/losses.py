@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mile.constants import SEMANTIC_SEG_WEIGHTS
+from constants import SEMANTIC_SEG_WEIGHTS
 
 
 class SegmentationLoss(nn.Module):

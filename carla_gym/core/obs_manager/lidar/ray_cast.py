@@ -9,6 +9,7 @@ from matplotlib import cm
 import open3d as o3d
 
 from carla_gym.core.obs_manager.obs_manager import ObsManagerBase
+from constants import CARLA_FPS
 
 VIRIDIS = np.array(cm.get_cmap('plasma').colors)
 VID_RANGE = np.linspace(0.0, 1.0, VIRIDIS.shape[0])
@@ -72,6 +73,9 @@ class ObsManager(ObsManagerBase):
         self._no_noise = obs_configs['no_noise']
         self._render_o3d = obs_configs["render_o3d"]
         self._show_axis = obs_configs["show_axis"]
+
+        # rewrite the 'rotation_frequency' to the same as carla_fps
+        self._lidar_options['rotation_frequency'] = CARLA_FPS
 
         # Coordinates are forward-right-up https://carla.readthedocs.io/en/latest/ref_sensors/
         location = carla.Location(

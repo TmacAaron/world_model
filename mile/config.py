@@ -44,6 +44,7 @@ _C.N_WORKERS = 4
 _C.VAL_CHECK_INTERVAL = 5000
 _C.LOGGING_INTERVAL = 500
 _C.LIMIT_VAL_BATCHES = 1
+_C.LOG_VIDEO_INTERVAL = 5000
 
 _C.RECEPTIVE_FIELD = 1
 _C.FUTURE_HORIZON = 1
@@ -70,6 +71,15 @@ _C.DATASET.STRIDE_SEC = 0.2  # stride between two frames
 _C.DATASET.FILTER_BEGINNING_OF_RUN_SEC = 1.0  # in seconds. the beginning of the run is stationary.
 _C.DATASET.FILTER_NORM_REWARD = 0.6  # filter runs that have a normalised reward below this value.
 
+#############
+# Input lidar points
+#############
+_C.POINTS = CN()
+_C.POINTS.LIDAR_POSITION = [-1.0, 0.0, 2.0]
+_C.POINTS.LIDAR_ROTATION = [0.0, 0.0, 0.0]
+_C.POINTS.FOV = [-30, 10]
+_C.POINTS.CHANNELS = 64
+_C.POINTS.N_PER_SECOND = 600000
 
 #############
 # Input image
