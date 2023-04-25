@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from constants import CARLA_FPS
 from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels
-from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry
+from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
 
 
 class DataModule(pl.LightningDataModule):
@@ -172,6 +172,18 @@ class CarlaDataset(Dataset):
         instance_mask = birdview[3].astype(np.bool) | birdview[4].astype(np.bool)
         instance_label, _ = scipy.ndimage.label(instance_mask[None].astype(np.int64))
         single_element_t['instance_label'] = instance_label
+
+        # # Load lidar points clouds
+        # pcd = np.load(
+        #     os.path.join(self.dataset_path, run_id, data_row['points_path'])
+        # )  # n x 4, (x, y, z, intensity)
+        # single_element_t['points_intensity'] = pcd
+        pcd_semantic = np.load(
+            os.path.join(self.dataset_path, run_id, data_row['points_semantic_path']),
+            allow_pickle=True).item()
+        # single_element_t['points'] = pcd_semantic['points']
+        # single_element_t['points_label'] = pcd_semantic['semantics'].astype('uint8')
+        single_element_t['points_histogram'] = lidar_to_histogram_features(pcd_semantic['points'], self.cfg)
 
         # Load action and reward
         throttle, steering, brake = data_row['action']

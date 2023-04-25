@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as tvf
+import skimage.transform as skt
 from typing import Dict, Tuple
 
 from mile.utils.geometry_utils import get_out_of_view_mask
@@ -105,6 +106,16 @@ class PreProcess(nn.Module):
                     size,
                     mode=tvf.InterpolationMode.BILINEAR,
                 )
+
+        if 'points_histogram' in batch:
+            # mask histogram the same as bev.
+            scale = self.cfg.POINTS.HISTOGRAM.RESOLUTION * self.cfg.BEV.RESOLUTION
+            bev_shape = self.bev_out_of_view_mask.shape
+            out_shape = [int(scale * bev_shape[0]), int(scale * bev_shape[1])]
+            view_mask = skt.resize(self.bev_out_of_view_mask, out_shape)
+            batch['points_histogram'] = tvf.center_crop(batch['points_histogram'], out_shape)
+            batch['points_histogram'][:, :, :, view_mask] = 0
+            batch['points_histogram'] = torch.rot90(batch['points_histogram'], k=-1, dims=[3, 4]).contiguous()
 
         return batch
 

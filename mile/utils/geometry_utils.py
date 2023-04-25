@@ -87,3 +87,44 @@ def get_extrinsics(forward, right, up, pitch, yaw, roll):
     ])
 
     return mat
+
+
+def lidar_to_histogram_features(lidar, cfg, crop=256):
+    """
+    Convert LiDAR point cloud into 2-bin histogram over 256x256 grid
+    """
+
+    # fit the center of the histogram the same as the bev.
+    offset = cfg.BEV.OFFSET_FORWARD * cfg.BEV.RESOLUTION + cfg.IMAGE.CAMERA_POSITION[0]
+    pixels_per_meter = cfg.POINTS.HISTOGRAM.RESOLUTION
+    hist_max_per_pixel = cfg.POINTS.HISTOGRAM.HIST_MAX
+    x_meters_max = cfg.POINTS.HISTOGRAM.X_MAX
+    y_meters_max = cfg.POINTS.HISTOGRAM.Y_MAX
+
+    def splat_points(point_cloud):
+        # 256 x 256 grid
+        xbins = np.linspace(
+            -offset - x_meters_max,
+            -offset + x_meters_max,
+            2 * x_meters_max * pixels_per_meter + 1
+        )
+        ybins = np.linspace(
+            -y_meters_max,
+            y_meters_max,
+            2 * y_meters_max * pixels_per_meter + 1,
+        )
+        hist = np.histogramdd(point_cloud[..., :2], bins=(xbins, ybins))[0]
+        hist[hist > hist_max_per_pixel] = hist_max_per_pixel
+        overhead_splat = hist / hist_max_per_pixel
+        return overhead_splat[::-1, ::-1]
+
+    below = lidar[lidar[..., 2] <= 0]
+    middle = lidar[(0 < lidar[..., 2]) & (lidar[..., 2] <= 2.5)]
+    above = lidar[lidar[..., 2] > 2.5]
+    below_features = splat_points(below)
+    middle_features = splat_points(middle)
+    above_features = splat_points(above)
+    total_features = below_features + middle_features + above_features
+    features = np.stack([below_features, middle_features, above_features, total_features], axis=-1)
+    features = np.transpose(features, (2, 0, 1)).astype(np.float32)
+    return features

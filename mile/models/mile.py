@@ -45,6 +45,14 @@ class Mile(nn.Module):
 
         backbone_bev_in_channels = self.cfg.MODEL.ENCODER.OUT_CHANNELS
 
+        if self.cfg.MODEL.LIDAR.ENABLED:
+            self.lidar_encoder = timm.create_model(
+                cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+            )
+            lidar_feature_info = self.lidar_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            self.lidar_decoder = Decoder(lidar_feature_info, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+            backbone_bev_in_channels += self.cfg.MODEL.LIDAR.OUT_CHANNELS
+
         # Route map
         if self.cfg.MODEL.ROUTE.ENABLED:
             self.backbone_route = RouteEncode(cfg.MODEL.ROUTE.CHANNELS, cfg.MODEL.ROUTE.BACKBONE)
@@ -237,6 +245,12 @@ class Mile(nn.Module):
             x = x.permute(0, 1, 3, 4, 5, 2)
 
             x = self.frustum_pooling(x, intrinsics.unsqueeze(1), extrinsics.unsqueeze(1), depth_mask)
+
+        if self.cfg.MODEL.LIDAR.ENABLED:
+            points_histogram = pack_sequence_dim(batch['points_histogram'])
+            xs_lidar = self.lidar_encoder(points_histogram)
+            lidar_features = self.lidar_decoder(xs_lidar)
+            x = torch.cat([x, lidar_features], dim=1)
 
         if self.cfg.MODEL.ROUTE.ENABLED:
             route_map = pack_sequence_dim(batch['route_map'])

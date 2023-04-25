@@ -81,6 +81,17 @@ _C.POINTS.FOV = [-30, 10]
 _C.POINTS.CHANNELS = 64
 _C.POINTS.N_PER_SECOND = 600000
 
+_C.POINTS.HISTOGRAM = CN()
+_C.POINTS.HISTOGRAM.RESOLUTION = 10  # pixels per meter
+_C.POINTS.HISTOGRAM.HIST_MAX = 5  # max histogram per pixel
+_C.POINTS.HISTOGRAM.X_MAX = 20  # in meters
+_C.POINTS.HISTOGRAM.Y_MAX = 20  # in meters
+
+pixels_per_meter = 10
+hist_max_per_pixel = 5
+x_meters_max = 20
+y_meters_max = 20
+
 #############
 # Input image
 #############
@@ -156,6 +167,11 @@ _C.MODEL.ENCODER.OUT_CHANNELS = 64
 _C.MODEL.BEV = CN()
 _C.MODEL.BEV.BACKBONE = 'resnet18'
 _C.MODEL.BEV.CHANNELS = 64
+
+_C.MODEL.LIDAR = CN()
+_C.MODEL.LIDAR.ENABLED = True
+_C.MODEL.LIDAR.ENCODER = 'resnet18'
+_C.MODEL.LIDAR.OUT_CHANNELS = 64
 
 _C.MODEL.SPEED = CN()
 _C.MODEL.SPEED.CHANNELS = 16
