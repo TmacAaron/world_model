@@ -209,6 +209,14 @@ class WorldModelTrainer(pl.LightningModule):
             name = name + f'_{batch_idx}'
         self.logger.experiment.add_video(name, visualisation_video, global_step=self.global_step, fps=2)
 
+        if self.cfg.EVAL.RGB_SUPERVISION:
+            rgb_target = self.preprocess.inverse_normalization_image(batch['image'])
+            rgb_pred = self.preprocess.inverse_normalization_image(output['rgb_1'])
+
+            visualisation_rgb = torch.cat([rgb_target, rgb_pred], dim=-2).detach()
+            name = f'{name}_rgb'
+            self.logger.experiment.add_video(name, visualisation_rgb, global_step=self.global_step, fps=2)
+
     def configure_optimizers(self):
         #  Do not decay batch norm parameters and biases
         # https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994/2
