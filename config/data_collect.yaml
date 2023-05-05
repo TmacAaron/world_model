@@ -7,7 +7,7 @@ work_dir: /mnt/d/python/dataset/outputs
 
 defaults:
   - agent:
-    - mile
+#    - mile
     - ppo
     - my
   - test_suites: lb_data
@@ -20,7 +20,7 @@ n_episodes: 1
 run_time: ${actors.hero.terminal.kwargs.max_time}
 
 ev_id: hero
-resume: true
+resume: false
 log_level: INFO
 host: localhost
 seed: 0
@@ -51,7 +51,7 @@ agent:
   ppo:
     wb_run_path: iccv21-roach/trained-models/1929isj0
     wb_ckpt_step: null
-  mile:
+  my:
     obs_configs:
       birdview_label:
         module: birdview.chauffeurnet_label

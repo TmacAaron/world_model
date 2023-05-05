@@ -1,12 +1,12 @@
 import numpy as np
 
 
-CARLA_FPS = 25
+CARLA_FPS = 10
 DISPLAY_SEGMENTATION = True
 DISTORT_IMAGES = False
 WHEEL_BASE = 2.8711279296875
 # Ego-vehicle is 4.902m long and 2.128m wide. See `self._parent_actor.vehicle.bounding_box` in chaffeurnet_label
-EGO_VEHICLE_DIMENSION = [4.902, 2.128]
+EGO_VEHICLE_DIMENSION = [4.902, 2.128, 1.511]
 
 # https://github.com/carla-simulator/carla/blob/master/PythonAPI/carla/agents/navigation/local_planner.py
 # However when processed, see "process_obs" function, unknown becomes lane_follow and the rest has a value between

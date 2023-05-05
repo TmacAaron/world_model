@@ -175,15 +175,15 @@ class CarlaDataset(Dataset):
 
         # # Load lidar points clouds
         # pcd = np.load(
-        #     os.path.join(self.dataset_path, run_id, data_row['points_path'])
-        # )  # n x 4, (x, y, z, intensity)
-        # single_element_t['points_intensity'] = pcd
+        #     os.path.join(self.dataset_path, run_id, data_row['points_path']),
+        #     allow_pickle=True).item()  # n x 4, (x, y, z, intensity)
+        # single_element_t['points_intensity'] = np.concatenate([pcd['points_xyz'], pcd['intensity'][:, None]], axis=-1)
         pcd_semantic = np.load(
             os.path.join(self.dataset_path, run_id, data_row['points_semantic_path']),
             allow_pickle=True).item()
-        # single_element_t['points'] = pcd_semantic['points']
-        # single_element_t['points_label'] = pcd_semantic['semantics'].astype('uint8')
-        single_element_t['points_histogram'] = lidar_to_histogram_features(pcd_semantic['points'], self.cfg)
+        # single_element_t['points'] = pcd_semantic['points_xyz']
+        # single_element_t['points_label'] = pcd_semantic['ObjTag'].astype('uint8')
+        single_element_t['points_histogram'] = lidar_to_histogram_features(pcd_semantic['points_xyz'], self.cfg)
 
         # Load action and reward
         throttle, steering, brake = data_row['action']

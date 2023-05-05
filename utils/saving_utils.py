@@ -191,6 +191,8 @@ class DataWriter:
         os.makedirs(os.path.join(self._dir_path, 'depth_semantic'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'birdview'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'routemap'), exist_ok=True)
+        os.makedirs(os.path.join(self._dir_path, 'points'), exist_ok=True)
+        os.makedirs(os.path.join(self._dir_path, 'points_semantic'), exist_ok=True)
 
         dict_dataframe = {
             'action_mu': [],
@@ -208,12 +210,12 @@ class DataWriter:
             'command_next': [],
             'image_path': [],
             'depth_semantic_path': [],
-            'depth_semantic_trans': [],
+            # 'depth_semantic_trans': [],
             'birdview_path': [],
             'routemap_path': [],
-            'point_cloud_path': [],
+            'points_path': [],
             # 'point_cloud_multi_path': [],
-            'point_cloud_semantic_path': [],
+            'points_semantic_path': [],
             'n_classes': [],  # Number of classes in the bev
         }
 
@@ -267,6 +269,16 @@ class DataWriter:
             else:
                 depth_semantic = None
 
+            if obs['point_cloud'] is not None:
+                points = obs['point_cloud']['data']
+            else:
+                points = None
+
+            if obs['point_cloud_semantic'] is not None:
+                points_semantic = obs['point_cloud_semantic']['data']
+            else:
+                points_semantic = None
+
             # Process birdview and save as png
             birdview, route_map = preprocess_birdview_and_routemap(obs['birdview']['masks'])
             birdview, route_map = birdview.numpy(), route_map.numpy()
@@ -297,24 +309,18 @@ class DataWriter:
             if depth_semantic is not None:
                 depth_semantic_path = os.path.join(f'depth_semantic', f'depth_semantic_{i:09d}.png')
                 Image.fromarray(depth_semantic).save(os.path.join(self._dir_path, depth_semantic_path))
-                dict_dataframe['depth_semantic_trans'].append(obs['depth_semantic']['trans'])
+                # dict_dataframe['depth_semantic_trans'].append(obs['depth_semantic']['trans'])
                 dict_dataframe['depth_semantic_path'].append(depth_semantic_path)
 
             # store point cloud
-            points_list[f'{i:09d}'] = obs['point_cloud']
-            # points_list_multi[f'{i:09d}'] = obs['point_cloud_multi']
-            points_list_semantic[f'{i:09d}'] = obs['point_cloud_semantic']
-
-        # save point cloud
-        point_cloud_path = os.path.join(self._dir_path, 'point_clouds.npy')
-        # point_cloud_multi_path = os.path.join(self._dir_path, 'point_clouds_multi.npy')
-        point_cloud_semantic_path = os.path.join(self._dir_path, 'point_clouds_semantic.npy')
-        np.save(point_cloud_path, points_list)
-        # np.save(point_cloud_multi_path, points_list_multi)
-        np.save(point_cloud_semantic_path, points_list_semantic)
-        dict_dataframe['point_cloud_path'] = point_cloud_path
-        # dict_dataframe['point_cloud_multi_path'] = point_cloud_multi_path
-        dict_dataframe['point_cloud_semantic_path'] = point_cloud_semantic_path
+            if points is not None:
+                points_path = os.path.join(f'points', f'points_{i:09d}.npy')
+                np.save(os.path.join(self._dir_path, points_path), points)
+                dict_dataframe['points_path'].append(points_path)
+            if points_semantic is not None:
+                points_semantic_path = os.path.join(f'points_semantic', f'points_semantic_{i:09d}.npy')
+                np.save(os.path.join(self._dir_path, points_semantic_path), points_semantic)
+                dict_dataframe['points_semantic_path'].append(points_semantic_path)
 
         pd_dataframe = pd.DataFrame(dict_dataframe)
         pd_dataframe.to_pickle(os.path.join(self._dir_path, 'pd_dataframe.pkl'))
