@@ -1,5 +1,4 @@
 import numpy as np
-from data_preprocessing import *
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
@@ -10,6 +9,8 @@ from clearml import Task
 import logging
 from multiprocessing import Pool, RLock, Pipe
 from threading import Thread
+
+from data_preprocessing import *
 
 log = logging.getLogger(__name__)
 
@@ -58,8 +59,24 @@ def voxelize_dir(data_path, cfg, task_idx, all_task, pipe):
     log.info(f"Saved Voxels Data in {save_path}/voxels.npz.")
 
 
+def voxelize_one(depth_file, lidar_file, cfg, save_path):
+    name = re.match(r'.*/.*_(\d{9})\.png', depth_file).group(1)
+    name_ = re.match(r'.*/.*_(\d{9})\.npy', lidar_file).group(1)
+    assert name == name_, 'file sequence is false.'
+    pcd, sem = merge_pcd(depth_file, lidar_file, cfg.camera_position, cfg.lidar_position, cfg.fov)
+    offset_x = cfg.bev_offset_forward * cfg.bev_resolution + cfg.camera_position[0]
+    offset_z = cfg.offset_z * cfg.voxel_resolution
+    voxel_points, semantics = voxel_filter(pcd, sem, cfg.voxel_resolution, cfg.voxel_size, [offset_x, 0, offset_z])
+    data = np.concatenate([voxel_points, semantics[:, None]], axis=1)
+    # voxels = np.zeros(shape=cfg.voxel_size, dtype=np.uint8)
+    # voxels[voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2]] = semantics
+    # csr_voxels = sp.csr_matrix(voxels.reshape(voxels.shape[0], -1))
+    np.save(f'{save_path}/voxel_{name}.npy', data)
+    # np.save(f'{save_path}/voxel_coo/voxel_coo_{name}.npy', csr_voxels)
+
+
 @hydra.main(config_path='./', config_name='data_preprocess')
-def main(cfg: DictConfig):
+def main_(cfg: DictConfig):
     task = Task.init(project_name=cfg.cml_project, task_name=cfg.cml_task_name, task_type=cfg.cml_task_type,
                      tags=cfg.cml_tags)
     task.connect(cfg)
@@ -86,6 +103,44 @@ def main(cfg: DictConfig):
     main_thread.join()
 
     log.info("Finished Voxelization!")
+
+
+@hydra.main(config_path='./', config_name='data_preprocess')
+def main(cfg: DictConfig):
+    # task = Task.init(project_name=cfg.cml_project, task_name=cfg.cml_task_name, task_type=cfg.cml_task_type,
+    #                  tags=cfg.cml_tags)
+    # task.connect(cfg)
+    # cml_logger = task.get_logger()
+    root_path = Path(cfg.root)
+    data_paths = sorted([p for p in root_path.glob('**/Town*/*/') if p.is_dir()])
+
+    if not root_path.exists() or len(data_paths) == 0:
+        print('Root Path does not EXIST or there are NO LEGAL files!!!')
+        return
+
+    log.info(f'{len(data_paths)} runs will be voxelized.')
+    log.info(f'{data_paths}')
+
+    for i, path in enumerate(data_paths):
+        p = Pool(cfg.n_process)
+        depth_path = path.joinpath('depth_semantic')
+        lidar_path = path.joinpath('points_semantic')
+        depth_file_list = sorted([str(f) for f in depth_path.iterdir()])
+        lidar_file_list = sorted([str(f) for f in lidar_path.iterdir()])
+        assert len(depth_file_list) == len(lidar_file_list), 'number of depth and lidar file is not same.'
+
+        log.info(f'start voxelizing in dir {path}.')
+
+        save_path = path.joinpath('voxel')
+        if not save_path.exists():
+            save_path.mkdir()
+        pbar = tqdm(total=len(depth_file_list), desc=f'{i+1}/{len(data_paths)}')
+        for depth_file, lidar_file in zip(depth_file_list, lidar_file_list):
+            # voxelize_one(depth_file, lidar_file, cfg, save_path)
+            p.apply_async(func=voxelize_one, args=(depth_file, lidar_file, cfg, save_path), callback=pbar.update(1))
+        p.close()
+        p.join()
+        log.info(f'finished, save in {save_path}')
 
 
 if __name__ == '__main__':

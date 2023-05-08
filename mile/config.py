@@ -75,7 +75,7 @@ _C.DATASET.FILTER_NORM_REWARD = 0.6  # filter runs that have a normalised reward
 # Input lidar points
 #############
 _C.POINTS = CN()
-_C.POINTS.LIDAR_POSITION = [-1.0, 0.0, 2.0]
+_C.POINTS.LIDAR_POSITION = [1.0, 0.0, 2.0]
 _C.POINTS.LIDAR_ROTATION = [0.0, 0.0, 0.0]
 _C.POINTS.FOV = [-30, 10]
 _C.POINTS.CHANNELS = 64
@@ -86,11 +86,8 @@ _C.POINTS.HISTOGRAM.RESOLUTION = 10  # pixels per meter
 _C.POINTS.HISTOGRAM.HIST_MAX = 5  # max histogram per pixel
 _C.POINTS.HISTOGRAM.X_MAX = 20  # in meters
 _C.POINTS.HISTOGRAM.Y_MAX = 20  # in meters
-
-pixels_per_meter = 10
-hist_max_per_pixel = 5
-x_meters_max = 20
-y_meters_max = 20
+_C.POINTS.HISTOGRAM.Z_MAX = 10  # in meters
+_C.POINTS.HISTOGRAM.Z_MIN = -5  # in meters
 
 #############
 # Input image
@@ -99,7 +96,7 @@ _C.IMAGE = CN()
 _C.IMAGE.SIZE = (600, 960)
 _C.IMAGE.CROP = [64, 138, 896, 458]  # (left, top, right, bottom)
 _C.IMAGE.FOV = 100
-_C.IMAGE.CAMERA_POSITION = [-1.5, 0.0, 2.0]  # (forward, right, up)
+_C.IMAGE.CAMERA_POSITION = [1.0, 0.0, 2.0]  # (forward, right, up)
 
 # carla defines as (pitch, yaw, roll)
 # /!\ roach defines as (roll, pitch, yaw)
@@ -237,9 +234,6 @@ _C.EVAL.DATASET_REDUCTION_FACTOR = 1
 _C.EVAL.RESOLUTION = CN()
 _C.EVAL.RESOLUTION.ENABLED = False
 _C.EVAL.RESOLUTION.FACTOR = 1
-
-_C.PRETRAINED = CN()
-_C.PRETRAINED.PATH = ''
 
 #########
 # Sampler

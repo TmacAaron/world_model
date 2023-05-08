@@ -1,19 +1,20 @@
-root: /mnt/d/python/dataset/test/
+root: /mnt/d/python/dataset/outputs/2023-05-05/
 #data_path: ${root}/2023-04-19/17-32-11/dataset/Town01/0000/depth_semantic
 
-n_process: 8
+n_process: 4
 #date: 2023-04-19
 #time: 17-32-11
 #town: Town01
 #run_name: 0000
-fov: 90
-size: [320, 320]  # weight, height
-offset: [10, 10, 10] # x, y, z in world-coor, y, x, z in cam-coor
-mask_ego: [2.5, 1.1, 2]
-voxel_size: 0.25
-center: [50, 50, 10]
+camera_position: [1.0, 0.0, 2.0]
+lidar_position: [1.0, 0.0, 2.0]
+fov: 110
+voxel_resolution: 0.2
+voxel_size: [192, 192, 64]
+bev_offset_forward: -64 # in px
+bev_resolution: 0.2
+offset_z: -20 # in px
 
-lidar_transition: [-1.0, 0.0, 2.0]
 
 cml_project: MasterThesis/world_model
 cml_task_name: voxelization

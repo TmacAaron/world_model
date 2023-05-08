@@ -25,7 +25,7 @@ def process_one_file(data_path, transition, task_idx, all_task, position, is_sem
         save_path.mkdir()
     path_list = []
     try:
-        pcd_list = load_lidar(file)
+        pcd_list, _, _ = load_lidar(file)
         pbar = tqdm(total=len(pcd_list), desc=f'{task_idx + 1:04} / {all_task:04}',
                     position=position, postfix='semantic' if is_semantic else 'points')
         for name, lidar_unprocessed in pcd_list.items():
