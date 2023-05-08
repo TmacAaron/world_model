@@ -1,6 +1,8 @@
 import numpy as np
 # import open3d as o3d
 import cv2
+
+EGO_VEHICLE_DIMENSION = [4.902, 2.128, 1.511]
 # import matplotlib.pyplot as plt
 
 
@@ -31,7 +33,7 @@ import cv2
 #     (170, 120, 50, 'dynamic'),     # dynamic = 21
 #     (55, 90, 80, 'other'),       # other = 22
 #     (45, 60, 150, 'water'),      # water = 23
-#     (157, 234, 50, 'road'),     # road line = 24
+#     (157, 234, 50, 'roadlines'),     # road line = 24
 #     (81, 0, 81, 'grond'),        # grond = 25
 #     (150, 100, 100, 'bridge'),    # bridge = 26
 #     (230, 150, 140, 'rail'),    # rail track = 27
@@ -76,10 +78,12 @@ def read_img(file):
 
 def load_lidar(file):
     data = np.load(file, allow_pickle=True).item()
-    return data
+    pcd = data['points_xyz']
+    semantic = data['ObjTag']
+    return data, pcd, semantic
 
 
-def depth2pcd(depth, semantic, fov):
+def depth2pcd(depth, semantic, fov, range=100):
     h, w = depth.shape
     f = w / (2.0 * np.tan(fov * np.pi / 360.0))
     cx, cy = w / 2.0, h / 2.0
@@ -95,7 +99,43 @@ def depth2pcd(depth, semantic, fov):
     x, y = (xx - cx) * depth / f, (yy - cy) * depth / f
     points_list = np.concatenate([x, y, depth], axis=1)
     sem_list = semantic.reshape((-1, 1))[valid]
-    return points_list, sem_list
+    valid_ = (np.linalg.norm(points_list, axis=1) < range).squeeze()
+    return points_list[valid_], sem_list[valid_]
+
+
+def convert_coor_img(pcd, camera_pos):
+    forward, right, up = camera_pos
+    mat = np.float32([
+        [0,  0,  1, forward],
+        [-1, 0,  0, -right],
+        [0,  -1, 0, up],
+        [0,  0,  0, 1],
+    ])
+    pcd = np.insert(pcd, 3, 1, axis=1)
+    pcd = (mat @ pcd.T).T
+    return pcd[..., :-1]
+
+
+def convert_coor_lidar(pcd, lidar_pos):
+    pcd[:, 1] *= -1
+    pcd += np.asarray(lidar_pos)
+    return pcd
+
+
+def merge_pcd(depth_file, lidar_file, camera_pos, lidar_pos, fov=110, mask_ego=True):
+    depth, semantic, _ = read_img(depth_file)
+    img_pcd, img_semantic = depth2pcd(depth, semantic, fov)
+    img_pcd = convert_coor_img(img_pcd, camera_pos)
+    _, lidar_pcd, lidar_semantic = load_lidar(lidar_file)
+    lidar_pcd = convert_coor_lidar(lidar_pcd, lidar_pos)
+    pcd = np.concatenate([img_pcd, lidar_pcd], axis=0)
+    semantic = np.concatenate([img_semantic, lidar_semantic[:, None]], axis=0)
+    if mask_ego:
+        x, y, z = EGO_VEHICLE_DIMENSION
+        ego_box = np.array([[-x/2, -y/2, 0], [x/2, y/2, z]])
+        ego_idx = ((ego_box[0] < pcd) & (pcd < ego_box[1])).all(axis=1)
+        semantic[ego_idx] = 255
+    return pcd, semantic
 
 
 def get_all_points(depth, semantic, fov=90, size=(320, 320), offset=(10, 10, 10), mask_ego=True):
@@ -128,17 +168,17 @@ def get_all_points(depth, semantic, fov=90, size=(320, 320), offset=(10, 10, 10)
     return points_list, sem_list
 
 
-def voxel_filter(pcd, sem, voxel_size, center, center_low=True):
-    center = np.asarray(center)
-    pcd_b = pcd + center
-    if center_low:
-        pcd_b[:, 2] -= center[2] / 2
-    idx = ((0 <= pcd_b) & (pcd_b <= 2 * center)).all(axis=1)
+def voxel_filter(pcd, sem, voxel_resolution, voxel_size, offset):
+    voxel_size = np.asarray(voxel_size)
+    offset = np.asarray(offset)
+    offset += voxel_resolution * voxel_size / 2
+    pcd_b = pcd + offset
+    idx = ((0 <= pcd_b) & (pcd_b <= voxel_size * voxel_resolution)).all(axis=1)
     pcd_b, sem_b = pcd_b[idx], sem[idx]
 
-    Dx, Dy, Dz = (2 * center) // voxel_size + 1
+    Dx, Dy, Dz = voxel_size
     # compute index for every point in a voxel
-    hxyz, hmod = np.divmod(pcd_b, voxel_size)
+    hxyz, hmod = np.divmod(pcd_b, voxel_resolution)
     h = hxyz[:, 0] + hxyz[:, 1] * Dx + hxyz[:, 2] * Dx * Dy
 
     # h_n = np.nonzero(np.bincount(h.astype(np.int32)))
