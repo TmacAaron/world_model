@@ -59,7 +59,7 @@ def voxelize_dir(data_path, cfg, task_idx, all_task, pipe):
     log.info(f"Saved Voxels Data in {save_path}/voxels.npz.")
 
 
-def voxelize_one(depth_file, lidar_file, cfg, save_path):
+def voxelize_one(depth_file, lidar_file, cfg, save_path, pipe=None):
     name = re.match(r'.*/.*_(\d{9})\.png', depth_file).group(1)
     name_ = re.match(r'.*/.*_(\d{9})\.npy', lidar_file).group(1)
     assert name == name_, 'file sequence is false.'
@@ -73,6 +73,9 @@ def voxelize_one(depth_file, lidar_file, cfg, save_path):
     # csr_voxels = sp.csr_matrix(voxels.reshape(voxels.shape[0], -1))
     np.save(f'{save_path}/voxel_{name}.npy', data)
     # np.save(f'{save_path}/voxel_coo/voxel_coo_{name}.npy', csr_voxels)
+
+    if pipe is not None:
+        pipe.send(['x'])
 
 
 @hydra.main(config_path='./', config_name='data_preprocess')
@@ -122,11 +125,16 @@ def main(cfg: DictConfig):
     log.info(f'{data_paths}')
 
     for i, path in enumerate(data_paths):
-        p = Pool(cfg.n_process)
         depth_path = path.joinpath('depth_semantic')
         lidar_path = path.joinpath('points_semantic')
         depth_file_list = sorted([str(f) for f in depth_path.iterdir()])
         lidar_file_list = sorted([str(f) for f in lidar_path.iterdir()])
+
+        parent, child = Pipe()
+        main_thread = Thread(target=progress_bar_total, args=(parent, len(depth_file_list), "Total"))
+        main_thread.start()
+        p = Pool(cfg.n_process)
+
         assert len(depth_file_list) == len(lidar_file_list), 'number of depth and lidar file is not same.'
 
         log.info(f'start voxelizing in dir {path}.')
@@ -134,12 +142,13 @@ def main(cfg: DictConfig):
         save_path = path.joinpath('voxel')
         if not save_path.exists():
             save_path.mkdir()
-        pbar = tqdm(total=len(depth_file_list), desc=f'{i+1}/{len(data_paths)}')
+        # pbar = tqdm(total=len(depth_file_list), desc=f'{i+1}/{len(data_paths)}')
         for depth_file, lidar_file in zip(depth_file_list, lidar_file_list):
             # voxelize_one(depth_file, lidar_file, cfg, save_path)
-            p.apply_async(func=voxelize_one, args=(depth_file, lidar_file, cfg, save_path), callback=pbar.update(1))
+            p.apply_async(func=voxelize_one, args=(depth_file, lidar_file, cfg, save_path, child))
         p.close()
         p.join()
+        main_thread.join()
         log.info(f'finished, save in {save_path}')
 
 
