@@ -131,7 +131,7 @@ def main(cfg: DictConfig):
         lidar_file_list = sorted([str(f) for f in lidar_path.iterdir()])
 
         parent, child = Pipe()
-        main_thread = Thread(target=progress_bar_total, args=(parent, len(depth_file_list), "Total"))
+        main_thread = Thread(target=progress_bar_total, args=(parent, len(depth_file_list), f'{i+1}/{len(data_paths)}'))
         main_thread.start()
         p = Pool(cfg.n_process)
 
