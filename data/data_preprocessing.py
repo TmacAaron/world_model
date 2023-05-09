@@ -70,9 +70,9 @@ LABEL_CLASS = np.char.lower(LABEL[:, -1])
 
 def read_img(file):
     img = cv2.imread(file, -1)
-    depth_color = img[..., :-1]
+    depth_color = img[..., :-1].astype(float)
     semantic = img[..., -1]
-    depth = 1000 * (256 ** 2 * depth_color[..., 2] + 256 * depth_color[..., 1] + depth_color[..., 0]) / (256 ** 3 - 1)
+    depth = 1000 * ((256 ** 2 * depth_color[..., 2] + 256 * depth_color[..., 1] + depth_color[..., 0]) / (256 ** 3 - 1))
     return depth, semantic, depth_color
 
 
@@ -117,8 +117,8 @@ def convert_coor_img(pcd, camera_pos):
 
 
 def convert_coor_lidar(pcd, lidar_pos):
-    pcd[:, 1] *= -1
     pcd += np.asarray(lidar_pos)
+    pcd[:, 1] *= -1
     return pcd
 
 
@@ -134,7 +134,8 @@ def merge_pcd(depth_file, lidar_file, camera_pos, lidar_pos, fov=110, mask_ego=T
         x, y, z = EGO_VEHICLE_DIMENSION
         ego_box = np.array([[-x/2, -y/2, 0], [x/2, y/2, z]])
         ego_idx = ((ego_box[0] < pcd) & (pcd < ego_box[1])).all(axis=1)
-        semantic[ego_idx] = 255
+        semantic = semantic[~ego_idx]
+        pcd = pcd[~ego_idx]
     return pcd, semantic
 
 

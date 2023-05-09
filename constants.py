@@ -32,3 +32,30 @@ BIRDVIEW_COLOURS = np.array([[255, 255, 255],          # Background
 
 # Obtained with sqrt of inverse frequency
 SEMANTIC_SEG_WEIGHTS = np.array([1.0, 1.0, 1.0, 2.0, 3.0, 1.0, 1.0, 1.0])
+
+VOXEL_LABEL = {
+    0:   'Nothing',  # None
+    1:   'Building',  # Building
+    2:   'Fences',  # Fences
+    3:   'Other',  # Other
+    4:   'Pedestrian',  # Pedestrian
+    5:   'Pole',  # Pole
+    6:   'RoadLines',  # RoadLines
+    7:   'Road',  # Road
+    8:   'Sidewalk',  # Sidewalk
+    9:   'Vegetation',  # Vegetation
+    10:  'Vehicle',  # Vehicle
+    11:  'Wall',  # Wall
+    12:  'TrafficSign',  # TrafficSign
+    13:  'Sky',  # Sky
+    14:  'Ground',  # Ground
+    15:  'Bridge',  # Bridge
+    16:  'RailTrack',  # RailTrack
+    17:  'GuardRail',  # GuardRail
+    18:  'TrafficLight',  # TrafficLight
+    19:  'Static',  # Static
+    20:  'Dynamic',  # Dynamic
+    21:  'Water',  # Water
+    22:  'Terrain',  # Terrain
+}
+

@@ -16,7 +16,9 @@ class PreProcess(nn.Module):
         self.crop = tuple(cfg.IMAGE.CROP)
         self.route_map_size = cfg.ROUTE.SIZE
 
-        self.bev_out_of_view_mask = get_out_of_view_mask(cfg)
+        if self.cfg.EVAL.MASK_VIEW:
+            self.bev_out_of_view_mask = get_out_of_view_mask(cfg)
+
         # Instance label parameters
         self.center_sigma = cfg.INSTANCE_SEG.CENTER_LABEL_SIGMA_PX
         self.ignore_index = cfg.INSTANCE_SEG.IGNORE_INDEX
@@ -47,7 +49,8 @@ class PreProcess(nn.Module):
     def prepare_bev_labels(self, batch):
         if 'birdview_label' in batch:
             # Mask bird's-eye view label pixels that are not visible from the input image
-            batch['birdview_label'][:, :, :, self.bev_out_of_view_mask] = 0
+            if self.cfg.EVAL.MASK_VIEW:
+                batch['birdview_label'][:, :, :, self.bev_out_of_view_mask] = 0
 
             # Currently the frustum pooling is set up such that the bev features are rotated by 90 degrees clockwise
             batch['birdview_label'] = torch.rot90(batch['birdview_label'], k=-1, dims=[3, 4]).contiguous()
@@ -64,7 +67,8 @@ class PreProcess(nn.Module):
 
         if 'instance_label' in batch:
             # Mask elements not visible from the input image
-            batch['instance_label'][:, :, :, self.bev_out_of_view_mask] = 0
+            if self.cfg.EVAL.MASK_VIEW:
+                batch['instance_label'][:, :, :, self.bev_out_of_view_mask] = 0
             #  Currently the frustum pooling is set up such that the bev features are rotated by 90 degrees clockwise
             batch['instance_label'] = torch.rot90(batch['instance_label'], k=-1, dims=[3, 4]).contiguous()
 
@@ -109,13 +113,14 @@ class PreProcess(nn.Module):
 
         if 'points_histogram' in batch:
             # mask histogram the same as bev.
-            scale = self.cfg.POINTS.HISTOGRAM.RESOLUTION * self.cfg.BEV.RESOLUTION
-            bev_shape = self.bev_out_of_view_mask.shape
-            out_shape = [int(scale * bev_shape[0]), int(scale * bev_shape[1])]
-            view_mask = skt.resize(self.bev_out_of_view_mask, out_shape)
-            batch['points_histogram'] = tvf.center_crop(batch['points_histogram'], out_shape)
-            batch['points_histogram'][:, :, :, view_mask] = 0
-            batch['points_histogram'] = torch.rot90(batch['points_histogram'], k=-1, dims=[3, 4]).contiguous()
+            if self.cfg.EVAL.MASK_VIEW:
+                scale = self.cfg.POINTS.HISTOGRAM.RESOLUTION * self.cfg.BEV.RESOLUTION
+                bev_shape = self.bev_out_of_view_mask.shape
+                out_shape = [int(scale * bev_shape[0]), int(scale * bev_shape[1])]
+                view_mask = skt.resize(self.bev_out_of_view_mask, out_shape)
+                batch['points_histogram'] = tvf.center_crop(batch['points_histogram'], out_shape)
+                batch['points_histogram'][:, :, :, view_mask[::-1, ::-1]] = 0
+            # batch['points_histogram'] = torch.rot90(batch['points_histogram'], k=-1, dims=[3, 4]).contiguous()
 
         return batch
 

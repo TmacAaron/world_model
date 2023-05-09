@@ -63,7 +63,7 @@ def voxelize_dir(data_path, cfg, task_idx, all_task, pipe):
 
 def voxelize_one(depth_file, lidar_file, cfg, save_name, pipe=None):
     pcd, sem = merge_pcd(depth_file, lidar_file, cfg.camera_position, cfg.lidar_position, cfg.fov)
-    offset_x = cfg.bev_offset_forward * cfg.bev_resolution + cfg.camera_position[0]
+    offset_x = cfg.bev_offset_forward * cfg.bev_resolution
     offset_z = cfg.offset_z * cfg.voxel_resolution
     voxel_points, semantics = voxel_filter(pcd, sem, cfg.voxel_resolution, cfg.voxel_size, [offset_x, 0, offset_z])
     data = np.concatenate([voxel_points, semantics[:, None]], axis=1)
@@ -128,9 +128,9 @@ def main(cfg: DictConfig):
         pd_dataframe = pd.read_pickle(pd_file)
         data_len = len(pd_dataframe)
 
-        parent, child = Pipe()
-        main_thread = Thread(target=progress_bar_total, args=(parent, data_len, f'{i+1}/{len(data_paths)}'))
-        main_thread.start()
+        # parent, child = Pipe()
+        # main_thread = Thread(target=progress_bar_total, args=(parent, data_len, f'{i+1}/{len(data_paths)}'))
+        # main_thread.start()
         p = Pool(cfg.n_process)
 
         log.info(f'start voxelizing in dir {path}.')
@@ -141,7 +141,7 @@ def main(cfg: DictConfig):
         save_path.mkdir()
 
         voxel_paths = []
-        # pbar = tqdm(total=len(depth_file_list), desc=f'{i+1}/{len(data_paths)}')
+        pbar = tqdm(total=data_len, desc=f'{i+1}/{len(data_paths)}')
         for j in range(data_len):
             # voxelize_one(depth_file, lidar_file, cfg, save_path)
             data_row = pd_dataframe.iloc[j]
@@ -152,11 +152,13 @@ def main(cfg: DictConfig):
             assert name == name_, 'file sequence is false.'
             file_name = f'{save_path.name}/voxel_{name}.npy'
             save_name = f'{path}/{file_name}'
-            p.apply_async(func=voxelize_one, args=(depth_file, lidar_file, cfg, save_name, child))
+            p.apply_async(func=voxelize_one, args=(depth_file, lidar_file, cfg, save_name),
+                          callback=lambda _: pbar.update())
             voxel_paths.append(file_name)
         p.close()
         p.join()
-        main_thread.join()
+        # main_thread.join()
+        pbar.close()
         pd_dataframe['voxel_path'] = voxel_paths
         pd_dataframe.to_pickle(pd_file)
         log.info(f'finished, save in {save_path}')

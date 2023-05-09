@@ -84,10 +84,17 @@ _C.POINTS.N_PER_SECOND = 600000
 _C.POINTS.HISTOGRAM = CN()
 _C.POINTS.HISTOGRAM.RESOLUTION = 10  # pixels per meter
 _C.POINTS.HISTOGRAM.HIST_MAX = 5  # max histogram per pixel
-_C.POINTS.HISTOGRAM.X_MAX = 20  # in meters
-_C.POINTS.HISTOGRAM.Y_MAX = 20  # in meters
-_C.POINTS.HISTOGRAM.Z_MAX = 10  # in meters
-_C.POINTS.HISTOGRAM.Z_MIN = -5  # in meters
+_C.POINTS.HISTOGRAM.X_RANGE = 384  # in pxs
+_C.POINTS.HISTOGRAM.Y_RANGE = 384  # in pxs
+_C.POINTS.HISTOGRAM.Z_RANGE = 128  # in pxs
+
+#############
+# Input Voxels
+#############
+_C.VOXEL = CN()
+_C.VOXEL.SIZE = [192, 192, 64]
+_C.VOXEL.RESOLUTION = 0.2
+_C.VOXEL.EV_POSITION = [32, 96, 12]
 
 #############
 # Input image
@@ -167,8 +174,10 @@ _C.MODEL.BEV.CHANNELS = 64
 
 _C.MODEL.LIDAR = CN()
 _C.MODEL.LIDAR.ENABLED = True
+_C.MODEL.LIDAR.MULTI_VIEW = True
 _C.MODEL.LIDAR.ENCODER = 'resnet18'
 _C.MODEL.LIDAR.OUT_CHANNELS = 64
+_C.MODEL.LIDAR.BACKBONE = 'resnet18'
 
 _C.MODEL.SPEED = CN()
 _C.MODEL.SPEED.CHANNELS = 16
@@ -224,6 +233,7 @@ _C.PRETRAINED.PATH = ''
 
 # There parameters are only used to benchmark other models.
 _C.EVAL = CN()
+_C.EVAL.MASK_VIEW = False
 _C.EVAL.RGB_SUPERVISION = False
 _C.EVAL.CHECKPOINT_PATH = ''
 _C.EVAL.NO_LIFTING = False

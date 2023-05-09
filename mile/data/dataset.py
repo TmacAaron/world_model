@@ -9,9 +9,10 @@ import scipy.ndimage
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from constants import CARLA_FPS
+from constants import CARLA_FPS, VOXEL_LABEL, EGO_VEHICLE_DIMENSION
 from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels
 from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
+from data.data_preprocessing import convert_coor_lidar
 
 
 class DataModule(pl.LightningDataModule):
@@ -181,9 +182,29 @@ class CarlaDataset(Dataset):
         pcd_semantic = np.load(
             os.path.join(self.dataset_path, run_id, data_row['points_semantic_path']),
             allow_pickle=True).item()
-        # single_element_t['points'] = pcd_semantic['points_xyz']
+        points = convert_coor_lidar(pcd_semantic['points_xyz'], self.cfg.POINTS.LIDAR_POSITION)
+        # semantic = pcd_semantic['ObjTag']
+        x, y, z = EGO_VEHICLE_DIMENSION
+        ego_box = np.array([[-x/2, -y/2, 0], [x/2, y/2, z]])
+        ego_idx = ((ego_box[0] < points) & (points < ego_box[1])).all(axis=1)
+        # semantic = semantic[~ego_idx]
+        points = points[~ego_idx]
+        # single_element_t['points'] = points
         # single_element_t['points_label'] = pcd_semantic['ObjTag'].astype('uint8')
-        single_element_t['points_histogram'] = lidar_to_histogram_features(pcd_semantic['points_xyz'], self.cfg)
+        single_element_t['points_histogram_xy'], \
+        single_element_t['points_histogram_xz'], \
+        single_element_t['points_histogram_yz'] = lidar_to_histogram_features(points, self.cfg)
+
+        # Load voxels
+        voxel_data = np.load(
+            os.path.join(self.dataset_path, run_id, data_row['voxel_path'])
+        )
+        voxel_points = voxel_data[:, :-1]
+        voxel_semantics = voxel_data[:, -1]
+        voxel_semantics[voxel_semantics == 255] = len(VOXEL_LABEL)
+        voxels = np.zeros(self.cfg.VOXEL.SIZE, dtype=np.uint8)
+        voxels[voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2]] = voxel_semantics
+        single_element_t['voxel'] = voxels
 
         # Load action and reward
         throttle, steering, brake = data_row['action']
