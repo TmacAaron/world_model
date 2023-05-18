@@ -174,7 +174,7 @@ def voxel_filter(pcd, sem, voxel_resolution, voxel_size, offset):
     offset = np.asarray(offset)
     offset += voxel_resolution * voxel_size / 2
     pcd_b = pcd + offset
-    idx = ((0 <= pcd_b) & (pcd_b <= voxel_size * voxel_resolution)).all(axis=1)
+    idx = ((0 <= pcd_b) & (pcd_b < voxel_size * voxel_resolution)).all(axis=1)
     pcd_b, sem_b = pcd_b[idx], sem[idx]
 
     Dx, Dy, Dz = voxel_size
