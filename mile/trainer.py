@@ -50,6 +50,9 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.EVAL.RGB_SUPERVISION:
             self.rgb_loss = SpatialRegressionLoss(norm=1)
 
+        if self.cfg.LIDAR_RE.ENABLED:
+            self.lidar_re_loss = SpatialRegressionLoss(norm=2)
+
     def load_pretrained_weights(self):
         if self.cfg.PRETRAINED.PATH:
             if os.path.isfile(self.cfg.PRETRAINED.PATH):
@@ -121,6 +124,15 @@ class WorldModelTrainer(pl.LightningModule):
                     target=batch[f'rgb_label_{downsampling_factor}'],
                 )
                 losses[f'rgb_{downsampling_factor}'] = rgb_weight * discount * rgb_loss
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            for downsampling_factor in [1, 2, 4]:
+                discount = 1 / downsampling_factor
+                lidar_re_loss = self.lidar_re_loss(
+                    prediction=output[f'lidar_reconstruction_{downsampling_factor}'],
+                    target=batch[f'range_view_label_{downsampling_factor}']
+                )
+                losses[f'lidar_re_{downsampling_factor}'] = lidar_re_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_RE
 
         if self.cfg.MODEL.REWARD.ENABLED:
             reward_loss = self.action_loss(output['reward'], batch['reward'])
@@ -210,12 +222,20 @@ class WorldModelTrainer(pl.LightningModule):
         self.logger.experiment.add_video(name, visualisation_video, global_step=self.global_step, fps=2)
 
         if self.cfg.EVAL.RGB_SUPERVISION:
-            rgb_target = self.preprocess.inverse_normalization_image(batch['image'])
-            rgb_pred = self.preprocess.inverse_normalization_image(output['rgb_1'])
+            rgb_target = batch['rgb_label_1']
+            rgb_pred = output['rgb_1'].detach()
 
-            visualisation_rgb = torch.cat([rgb_target, rgb_pred], dim=-2).detach()
+            visualisation_rgb = torch.cat([rgb_pred, rgb_target], dim=-2).detach()
             name = f'{name}_rgb'
             self.logger.experiment.add_video(name, visualisation_rgb, global_step=self.global_step, fps=2)
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            lidar_target = batch['range_view_label_1'][:, :, -1, :, :]
+            lidar_pred = output['lidar_reconstruction_1'].detach()[:, :, -1, :, :]
+
+            visualisation_lidar = torch.cat([lidar_pred, lidar_target], dim=-2).detach().unsqueeze(-3)
+            name = f'{name}_lidar'
+            self.logger.experiment.add_video(name, visualisation_lidar, global_step=self.global_step, fps=2)
 
     def configure_optimizers(self):
         #  Do not decay batch norm parameters and biases

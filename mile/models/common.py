@@ -82,7 +82,7 @@ class Decoder(nn.Module):
                 nn.BatchNorm2d(out_channels),
                 nn.ReLU(True),
             )
-            for i in range(2, n_upsample_skip_convs+2)
+            for i in range(2, n_upsample_skip_convs + 2)
         )
 
         self.out_channels = out_channels
@@ -91,8 +91,8 @@ class Decoder(nn.Module):
         x = self.conv1(xs[-1])
 
         for i, conv in enumerate(self.upsample_skip_convs):
-            size = xs[-(i+2)].shape[-2:]
-            x = conv(xs[-(i+2)]) + F.interpolate(x, size=size, mode='bilinear', align_corners=False)
+            size = xs[-(i + 2)].shape[-2:]
+            x = conv(xs[-(i + 2)]) + F.interpolate(x, size=size, mode='bilinear', align_corners=False)
 
         return x
 
@@ -135,10 +135,10 @@ class AdaptiveInstanceNorm(nn.Module):
         self.latent_affine = nn.Linear(latent_n_channels, 2 * out_channels)
 
     def forward(self, x, style):
-        # Instance norm
+        #  Instance norm
         mean = x.mean(dim=(-1, -2), keepdim=True)
         x = x - mean
-        std = torch.sqrt(torch.mean(x**2, dim=(-1, -2), keepdim=True) + self.epsilon)
+        std = torch.sqrt(torch.mean(x ** 2, dim=(-1, -2), keepdim=True) + self.epsilon)
         x = x / std
 
         # Normalising with the style vector
@@ -238,3 +238,88 @@ class BevDecoder(nn.Module):
 
         output = {**output_4, **output_2, **output_1}
         return output
+
+
+class VoxelDecoderScale(nn.Module):
+    def __init__(self, input_channels, n_classes, kernel_size=1, feature_channels=512):
+        super().__init__()
+
+        self.weight_xy_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
+        self.weight_xz_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
+        self.weight_yz_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(feature_channels, feature_channels),
+            nn.Softplus(),
+            nn.Linear(feature_channels, n_classes)
+        )
+
+    def attention_fusion(self, t1, w1, t2, w2):
+        norm_weight = torch.softmax(torch.cat([w1, w2], dim=1), dim=1)
+        feat = t1 * norm_weight[:, 0:1] + t2 * norm_weight[:, 1:2]
+        return feat
+
+    def expand_to_XYZ(self, xy_feat, xz_feat, yz_feat):
+        B, C, X, Y, Z = *xy_feat.size(), xz_feat.size(3)
+        xy_feat = xy_feat.view(B, C, X, Y, 1)
+        xz_feat = xz_feat.view(B, C, X, 1, Z)
+        yz_feat = yz_feat.view(B, C, 1, Y, Z)
+        return torch.broadcast_tensors(xy_feat, xz_feat, yz_feat)
+
+    def forward(self, x):
+        feature_xy, feature_xz, feature_yz = x
+
+        weights_xy = self.weight_xy_decoder(feature_xy)
+        weights_xz = self.weight_xz_decoder(feature_xz)
+        weights_yz = self.weight_yz_decoder(feature_yz)
+
+        feature_xy, feature_xz, feature_yz = self.expand_to_XYZ(feature_xy, feature_xz, feature_yz)
+        weights_xy, weights_xz, weights_yz = self.expand_to_XYZ(weights_xy, weights_xz, weights_yz)
+
+        features_xyz = self.attention_fusion(feature_xy, weights_xy, feature_xz, weights_xz) + \
+                       self.attention_fusion(feature_xy, weights_xy, feature_yz, weights_yz)
+
+        B, C, X, Y, Z = features_xyz.size()
+        logits = self.classifier(features_xyz.view(B, C, -1).transpose(1, 2))
+        logits = logits.permute(0, 2, 1).reshape(B, -1, X, Y, Z)
+
+        return logits
+
+
+class VoxelDecoder(nn.Module):
+    def __init__(self, input_channels, n_classes, kernel_size=1, feature_channels=512):
+        super().__init__()
+
+        self.decoder_1 = VoxelDecoderScale(input_channels, n_classes, kernel_size, feature_channels)
+        self.decoder_2 = VoxelDecoderScale(input_channels, n_classes, kernel_size, feature_channels)
+        self.decoder_4 = VoxelDecoderScale(input_channels, n_classes, kernel_size, feature_channels)
+
+    def forward(self, xy, xz, yz):
+        output_1 = self.decoder_1((xy['rgb_1'], xz['rgb_1'], yz['rgb_1']))
+        output_2 = self.decoder_2((xy['rgb_2'], xz['rgb_2'], yz['rgb_2']))
+        output_4 = self.decoder_4((xy['rgb_4'], xz['rgb_4'], yz['rgb_4']))
+        return {'voxel_1': output_1,
+                'voxel_2': output_2,
+                'voxel_4': output_4}
+
+
+class LidarDecoder(nn.Module):
+    def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(3, 3), is_segmentation=True):
+        super().__init__()
+        self.is_seg = is_segmentation
+        self.decoder = BevDecoder(latent_n_channels, semantic_n_channels, constant_size, is_segmentation=False)
+
+    def forward(self, x):
+        output = self.decoder(x)
+        if self.is_seg:
+            return{
+                'lidar_segmentation_1': output['rgb_1'],
+                'lidar_segmentation_2': output['rgb_2'],
+                'lidar_segmentation_4': output['rgb_4'],
+            }
+        else:
+            return {
+                'lidar_reconstruction_1': output['rgb_1'],
+                'lidar_reconstruction_2': output['rgb_2'],
+                'lidar_reconstruction_4': output['rgb_4']
+            }

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as tvf
 import skimage.transform as skt
@@ -109,6 +110,42 @@ class PreProcess(nn.Module):
                     batch[f'rgb_label_{previous_label_factor}'],
                     size,
                     mode=tvf.InterpolationMode.BILINEAR,
+                )
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            batch['range_view_label_1'] = batch['range_view_pcd_xyzd'].float() / 100.0
+            h, w = batch['range_view_label_1'].shape[-2:]
+            for downsample_factor in [2, 4]:
+                size = h // downsample_factor, w // downsample_factor
+                previous_label_factor = downsample_factor // 2
+                batch[f'range_view_label_{downsample_factor}'] = functional_resize(
+                    batch[f'range_view_label_{previous_label_factor}'],
+                    size,
+                    mode=tvf.InterpolationMode.BILINEAR,
+                )
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            batch['range_view_seg_label_1'] = batch['range_view_pcd_label']
+            h, w = batch['range_view_seg_label_1'].shape[-2:]
+            for downsample_factor in [2, 4]:
+                size = h // downsample_factor, w // downsample_factor
+                previous_label_factor = downsample_factor // 2
+                batch[f'range_view_seg_label_{downsample_factor}'] = functional_resize(
+                    batch[f'range_view_seg_label_{previous_label_factor}'],
+                    size,
+                    mode=tvf.InterpolationMode.NEAREST,
+                )
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            batch['voxel_label_1'] = batch['voxel']
+            x, y, z = batch['voxel_label_1'].shape[-3:]
+            for downsample_factor in [2, 4]:
+                size = (x // downsample_factor, y // downsample_factor, z // downsample_factor)
+                previous_label_factor = downsample_factor // 2
+                batch[f'voxel_label_{downsample_factor}'] = F.interpolate(
+                    batch[f'voxel_label_{previous_label_factor}'],
+                    size,
+                    mode='nearest',
                 )
 
         if 'points_histogram' in batch:

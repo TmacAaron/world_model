@@ -159,3 +159,58 @@ def lidar_to_histogram_features(lidar, cfg, crop=256):
     features_yz = np.stack([behind_features, mid_features, front_features, total_features_yz], axis=-1)
     features_yz = np.transpose(features_yz, (2, 0, 1)).astype(np.float32)
     return features_xy, features_xz, features_yz
+
+
+class PointCloud(object):
+    def __init__(self, H=64, W=1024, fov_down=-30, fov_up=10, lidar_position=(1, 0, 2)):
+        self.fov_up = fov_up / 180.0 * np.pi  # in rad
+        self.fov_down = fov_down / 180.0 * np.pi
+        self.fov = self.fov_up - self.fov_down
+        self.H = H
+        self.W = W
+        self.lidar_position = np.asarray(lidar_position)
+
+    def do_range_projection(self, points, semantics):
+        points_carla = points * np.array([1, -1, 1])
+        points_carla -= self.lidar_position
+
+        depth = np.linalg.norm(points_carla, 2, axis=1)
+
+        x = points_carla[:, 0]
+        y = -points_carla[:, 1]  # carla-coor is left-hand.
+        z = points_carla[:, 2]
+
+        yaw = np.arctan2(y, x)
+        pitch = np.arcsin(z / depth)
+
+        proj_w = 0.5 * (1.0 - yaw / np.pi)
+        proj_h = 1.0 - (pitch + abs(self.fov_down)) / self.fov
+        proj_w *= self.W
+        proj_h *= self.H
+
+        proj_w = np.floor(proj_w)
+        proj_w = np.minimum(self.W - 1, proj_w)
+        proj_w = np.maximum(0, proj_w).astype(np.int32)
+
+        proj_h = np.floor(proj_h)
+        proj_h = np.minimum(self.H - 1, proj_h)
+        proj_h = np.maximum(0, proj_h).astype(np.int32)
+
+        order = np.argsort(depth)[::-1]
+        depth = depth[order]
+        proj_w = proj_w[order]
+        proj_h = proj_h[order]
+        points = points[order]
+        semantics = semantics[order]
+
+        range_depth = np.full((self.H, self.W), -1, dtype=np.float32)
+        range_xyz = np.full((self.H, self.W, 3), 0, dtype=np.float32)
+        range_sem = np.full((self.H, self.W), 0, dtype=np.uint8)
+
+        # points += self.lidar_position
+        # points[:, 1] *= -1
+
+        range_depth[proj_h, proj_w] = depth
+        range_xyz[proj_h, proj_w] = points
+        range_sem[proj_h, proj_w] = semantics
+        return range_depth, range_xyz, range_sem

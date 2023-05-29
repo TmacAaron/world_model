@@ -12,6 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from constants import CARLA_FPS, VOXEL_LABEL, EGO_VEHICLE_DIMENSION
 from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels
 from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
+from mile.utils.geometry_utils import PointCloud
 from data.data_preprocessing import convert_coor_lidar
 
 
@@ -67,6 +68,12 @@ class CarlaDataset(Dataset):
         self.dataset_path = os.path.join(self.cfg.DATASET.DATAROOT, self.cfg.DATASET.VERSION, mode)
         self.intrinsics, self.extrinsics = calculate_geometry_from_config(self.cfg)
         self.bev_out_of_view_mask = get_out_of_view_mask(self.cfg)
+        self.pcd = PointCloud(
+            self.cfg.POINTS.CHANNELS,
+            self.cfg.POINTS.HORIZON_RESOLUTION,
+            *self.cfg.POINTS.FOV,
+            self.cfg.POINTS.LIDAR_POSITION
+        )
 
         # Iterate over all runs in the data folder
 
@@ -183,17 +190,22 @@ class CarlaDataset(Dataset):
             os.path.join(self.dataset_path, run_id, data_row['points_semantic_path']),
             allow_pickle=True).item()
         points = convert_coor_lidar(pcd_semantic['points_xyz'], self.cfg.POINTS.LIDAR_POSITION)
-        # semantic = pcd_semantic['ObjTag']
+        semantics = pcd_semantic['ObjTag']
         x, y, z = EGO_VEHICLE_DIMENSION
         ego_box = np.array([[-x/2, -y/2, 0], [x/2, y/2, z]])
         ego_idx = ((ego_box[0] < points) & (points < ego_box[1])).all(axis=1)
-        # semantic = semantic[~ego_idx]
+        semantics = semantics[~ego_idx]
         points = points[~ego_idx]
         # single_element_t['points'] = points
         # single_element_t['points_label'] = pcd_semantic['ObjTag'].astype('uint8')
         single_element_t['points_histogram_xy'], \
         single_element_t['points_histogram_xz'], \
         single_element_t['points_histogram_yz'] = lidar_to_histogram_features(points, self.cfg)
+
+        range_view_pcd_depth, range_view_pcd_xyz, range_view_pcd_sem = self.pcd.do_range_projection(points, semantics)
+        single_element_t['range_view_pcd_xyzd'] = np.concatenate(
+            [range_view_pcd_xyz, range_view_pcd_depth[..., None]], axis=-1).transpose((2, 0, 1))  # x y z d
+        single_element_t['range_view_pcd_label'] = range_view_pcd_sem[None]
 
         # Load voxels
         voxel_data = np.load(

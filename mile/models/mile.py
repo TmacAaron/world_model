@@ -4,7 +4,7 @@ import timm
 
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
-from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy
+from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder, LidarDecoder
 from mile.models.frustum_pooling import FrustumPooling
 from mile.layers.layers import BasicBlock
 from mile.models.transition import RSSM
@@ -45,13 +45,6 @@ class Mile(nn.Module):
 
         backbone_bev_in_channels = self.cfg.MODEL.ENCODER.OUT_CHANNELS
 
-        if self.cfg.MODEL.LIDAR.ENABLED:
-            self.lidar_encoder_xy = timm.create_model(
-                cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-            )
-            lidar_feature_info_xy = self.lidar_encoder_xy.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-            self.lidar_decoder_xy = Decoder(lidar_feature_info_xy, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-            backbone_bev_in_channels += self.cfg.MODEL.LIDAR.OUT_CHANNELS
 
         # Route map
         if self.cfg.MODEL.ROUTE.ENABLED:
@@ -98,47 +91,66 @@ class Mile(nn.Module):
 
         embedding_n_channels = self.cfg.MODEL.EMBEDDING_DIM
 
-        if self.cfg.MODEL.LIDAR.MULTI_VIEW:
-            self.lidar_encoder_xz = timm.create_model(
+        # if self.cfg.MODEL.LIDAR.MULTI_VIEW:
+        #     self.lidar_encoder_xz = timm.create_model(
+        #         cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+        #     )
+        #     lidar_feature_info_xz = self.lidar_encoder_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+        #     self.lidar_decoder_xz = Decoder(lidar_feature_info_xz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+        #
+        #     self.lidar_encoder_yz = timm.create_model(
+        #         cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+        #     )
+        #     lidar_feature_info_yz = self.lidar_encoder_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+        #     self.lidar_decoder_yz = Decoder(lidar_feature_info_yz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+        #
+        #     self.backbone_lidar_xz = timm.create_model(
+        #         cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
+        #         in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
+        #     )
+        #     feature_info_xz = self.backbone_lidar_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+        #     self.state_conv_xz = nn.Sequential(
+        #         BasicBlock(feature_info_xz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
+        #         BasicBlock(embedding_n_channels, embedding_n_channels),
+        #         nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+        #         nn.Flatten(start_dim=1),
+        #     )
+        #
+        #     self.backbone_lidar_yz = timm.create_model(
+        #         cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
+        #         in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
+        #     )
+        #     feature_info_yz = self.backbone_lidar_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+        #     self.state_conv_yz = nn.Sequential(
+        #         BasicBlock(feature_info_yz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
+        #         BasicBlock(embedding_n_channels, embedding_n_channels),
+        #         nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+        #         nn.Flatten(start_dim=1),
+        #     )
+        #
+        #     self.embedding_combine = nn.Sequential(
+        #         nn.Linear(3 * embedding_n_channels, embedding_n_channels),
+        #         # nn.BatchNorm1d(embedding_n_channels),
+        #         nn.ReLU(True)
+        #     )
+
+        if self.cfg.MODEL.LIDAR.ENABLED:
+            # self.lidar_encoder_xy = timm.create_model(
+            #     cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+            # )
+            # lidar_feature_info_xy = self.lidar_encoder_xy.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            # self.lidar_decoder_xy = Decoder(lidar_feature_info_xy, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+            # backbone_bev_in_channels += self.cfg.MODEL.LIDAR.OUT_CHANNELS
+            self.range_view_encoder = timm.create_model(
                 cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
             )
-            lidar_feature_info_xz = self.lidar_encoder_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-            self.lidar_decoder_xz = Decoder(lidar_feature_info_xz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-
-            self.lidar_encoder_yz = timm.create_model(
-                cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-            )
-            lidar_feature_info_yz = self.lidar_encoder_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-            self.lidar_decoder_yz = Decoder(lidar_feature_info_yz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-
-            self.backbone_lidar_xz = timm.create_model(
-                cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
-                in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
-            )
-            feature_info_xz = self.backbone_lidar_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-            self.state_conv_xz = nn.Sequential(
-                BasicBlock(feature_info_xz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
-                BasicBlock(embedding_n_channels, embedding_n_channels),
+            range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            self.range_view_decoder = Decoder(range_view_feature_info, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+            self.range_view_state_conv = nn.Sequential(
+                BasicBlock(self.cfg.MODEL.LIDAR.OUT_CHANNELS, embedding_n_channels, stride=2, downsample=True),
+                BasicBlock(embedding_n_channels, embedding_n_channels, stride=2, downsample=True),
                 nn.AdaptiveAvgPool2d(output_size=(1, 1)),
                 nn.Flatten(start_dim=1),
-            )
-
-            self.backbone_lidar_yz = timm.create_model(
-                cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
-                in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
-            )
-            feature_info_yz = self.backbone_lidar_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-            self.state_conv_yz = nn.Sequential(
-                BasicBlock(feature_info_yz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
-                BasicBlock(embedding_n_channels, embedding_n_channels),
-                nn.AdaptiveAvgPool2d(output_size=(1, 1)),
-                nn.Flatten(start_dim=1),
-            )
-
-            self.embedding_combine = nn.Sequential(
-                nn.Linear(3 * embedding_n_channels, embedding_n_channels),
-                # nn.BatchNorm1d(embedding_n_channels),
-                nn.ReLU(True)
             )
 
         # Bev network
@@ -193,6 +205,49 @@ class Mile(nn.Module):
                 semantic_n_channels=3,
                 constant_size=(5, 13),
                 is_segmentation=False,
+            )
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            self.lidar_re = LidarDecoder(
+                latent_n_channels=state_dim,
+                semantic_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
+                constant_size=(1, 16),
+                is_segmentation=False,
+            )
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            self.lidar_segmentation = LidarDecoder(
+                latent_n_channels=state_dim,
+                semantic_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
+                constant_size=(1, 16),
+                is_segmentation=True,
+            )
+
+        # Voxel reconstruction
+        if self.cfg.VOXEL_SEG.ENABLED:
+            self.voxel_feature_xy_decoder = BevDecoder(
+                latent_n_channels=state_dim,
+                semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
+                constant_size=(3, 3),
+                is_segmentation=False,
+            )
+            self.voxel_feature_xz_decoder = BevDecoder(
+                latent_n_channels=state_dim,
+                semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
+                constant_size=(3, 1),
+                is_segmentation=False,
+            )
+            self.voxel_feature_yz_decoder = BevDecoder(
+                latent_n_channels=state_dim,
+                semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
+                constant_size=(3, 1),
+                is_segmentation=False,
+            )
+            self.voxel_decoder = VoxelDecoder(
+                input_channels=self.cfg.VOXEL_SEG.DIMENSION,
+                n_classes=self.cfg.VOXEL_SEG.N_CLASSES,
+                kernel_size=1,
+                feature_channels=self.cfg.VOXEL_SEG.DIMENSION,
             )
 
         # Used during deployment to save last state
@@ -255,6 +310,24 @@ class Mile(nn.Module):
             rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, s)
             output = {**output, **rgb_decoder_output}
 
+        if self.cfg.LIDAR_RE.ENABLED:
+            lidar_output = self.lidar_re(state)
+            lidar_output = unpack_sequence_dim(lidar_output, b, s)
+            output = {**output, **lidar_output}
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            lidar_seg_output = self.lidar_segmentation(state)
+            lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, s)
+            output = {**output, **lidar_seg_output}
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            voxel_feature_xy = self.voxel_feature_xy_decoder(state)
+            voxel_feature_xz = self.voxel_feature_xz_decoder(state)
+            voxel_feature_yz = self.voxel_feature_yz_decoder(state)
+            voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
+            voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, s)
+            output = {**output, **voxel_decoder_output}
+
         return output
 
     def encode(self, batch):
@@ -290,12 +363,6 @@ class Mile(nn.Module):
 
             x = self.frustum_pooling(x, intrinsics.unsqueeze(1), extrinsics.unsqueeze(1), depth_mask)
 
-        if self.cfg.MODEL.LIDAR.ENABLED:
-            points_histogram_xy = pack_sequence_dim(batch['points_histogram_xy'])
-            xs_lidar_xy = self.lidar_encoder_xy(points_histogram_xy)
-            lidar_features_xy = self.lidar_decoder_xy(xs_lidar_xy)
-            x = torch.cat([x, lidar_features_xy], dim=1)
-
         if self.cfg.MODEL.ROUTE.ENABLED:
             route_map = pack_sequence_dim(batch['route_map'])
             route_map_features = self.backbone_route(route_map)
@@ -327,21 +394,32 @@ class Mile(nn.Module):
         embedding = self.backbone_bev(x)[-1]
         embedding = self.final_state_conv(embedding)
 
-        if self.cfg.MODEL.LIDAR.MULTI_VIEW:
-            points_histogram_xz = pack_sequence_dim(batch['points_histogram_xz'])
-            xs_lidar_xz = self.lidar_encoder_xz(points_histogram_xz)
-            lidar_features_xz = self.lidar_decoder_xz(xs_lidar_xz)
-            embedding_xz = self.backbone_lidar_xz(lidar_features_xz)[-1]
-            embedding_xz = self.state_conv_xz(embedding_xz)
+        if self.cfg.MODEL.LIDAR.ENABLED:
+            # points_histogram_xy = pack_sequence_dim(batch['points_histogram_xy'])
+            # xs_lidar_xy = self.lidar_encoder_xy(points_histogram_xy)
+            # lidar_features_xy = self.lidar_decoder_xy(xs_lidar_xy)
+            # x = torch.cat([x, lidar_features_xy], dim=1)
+            range_view = pack_sequence_dim(batch['range_view_pcd_xyzd'])
+            lidar_xs = self.range_view_encoder(range_view)
+            lidar_features = self.range_view_decoder(lidar_xs)
+            lidar_embedding = self.range_view_state_conv(lidar_features)
+            embedding = (lidar_embedding + embedding) / 2
 
-            points_histogram_yz = pack_sequence_dim(batch['points_histogram_yz'])
-            xs_lidar_yz = self.lidar_encoder_yz(points_histogram_yz)
-            lidar_features_yz = self.lidar_decoder_yz(xs_lidar_yz)
-            embedding_yz = self.backbone_lidar_xz(lidar_features_yz)[-1]
-            embedding_yz = self.state_conv_yz(embedding_yz)
-
-            embedding = torch.cat([embedding, embedding_xz, embedding_yz], dim=-1)
-            embedding = self.embedding_combine(embedding)
+        # if self.cfg.MODEL.LIDAR.MULTI_VIEW:
+        #     points_histogram_xz = pack_sequence_dim(batch['points_histogram_xz'])
+        #     xs_lidar_xz = self.lidar_encoder_xz(points_histogram_xz)
+        #     lidar_features_xz = self.lidar_decoder_xz(xs_lidar_xz)
+        #     embedding_xz = self.backbone_lidar_xz(lidar_features_xz)[-1]
+        #     embedding_xz = self.state_conv_xz(embedding_xz)
+        #
+        #     points_histogram_yz = pack_sequence_dim(batch['points_histogram_yz'])
+        #     xs_lidar_yz = self.lidar_encoder_yz(points_histogram_yz)
+        #     lidar_features_yz = self.lidar_decoder_yz(xs_lidar_yz)
+        #     embedding_yz = self.backbone_lidar_xz(lidar_features_yz)[-1]
+        #     embedding_yz = self.state_conv_yz(embedding_yz)
+        #
+        #     embedding = torch.cat([embedding, embedding_xz, embedding_yz], dim=-1)
+        #     embedding = self.embedding_combine(embedding)
 
         embedding = unpack_sequence_dim(embedding, b, s)
         return embedding
