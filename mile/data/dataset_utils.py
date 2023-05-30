@@ -2,8 +2,9 @@ import torch
 import numpy as np
 
 import carla
-import carla_gym.utils.transforms as trans_utils
-import carla_gym.core.task_actor.common.navigation.route_manipulation as gps_util
+# import carla_gym.utils.transforms as trans_utils
+# import carla_gym.core.task_actor.common.navigation.route_manipulation as gps_util
+from carlagym_utils import gps_to_location, vec_global_to_ref
 
 
 def binary_to_integer(binary_array, n_bits):
@@ -73,9 +74,9 @@ def preprocess_measurements(route_command, ego_gps, target_gps, imu):
 def preprocess_gps(ego_gps, target_gps, imu):
     # imu nan bug
     compass = 0.0 if np.isnan(imu[-1]) else imu[-1]
-    target_vec_in_global = gps_util.gps_to_location(target_gps) - gps_util.gps_to_location(ego_gps)
+    target_vec_in_global = gps_to_location(target_gps) - gps_to_location(ego_gps)
     ref_rot_in_global = carla.Rotation(yaw=np.rad2deg(compass) - 90.0)
-    loc_in_ev = trans_utils.vec_global_to_ref(target_vec_in_global, ref_rot_in_global)
+    loc_in_ev = vec_global_to_ref(target_vec_in_global, ref_rot_in_global)
     return loc_in_ev
 
 

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from constants import SEMANTIC_SEG_WEIGHTS
+from constants import SEMANTIC_SEG_WEIGHTS, VOXEL_SEG_WEIGHTS
 
 
 class SegmentationLoss(nn.Module):
@@ -136,3 +136,46 @@ class KLLoss(nn.Module):
         posterior_loss = self.loss(prior_mu.detach(), prior_sigma.detach(), posterior_mu, posterior_sigma)
 
         return self.alpha * prior_loss + (1 - self.alpha) * posterior_loss
+
+
+class VoxelLoss(nn.Module):
+    def __init__(self, use_top_k=False, top_k_ratio=1.0, use_weights=False, poly_one=False, poly_one_coefficient=0.0):
+        super().__init__()
+        self.use_top_k = use_top_k
+        self.top_k_ratio = top_k_ratio
+        self.use_weights = use_weights
+        self.poly_one = poly_one
+        self.poly_one_coefficient = poly_one_coefficient
+
+        if self.use_weights:
+            self.weights = VOXEL_SEG_WEIGHTS
+
+    def forward(self, prediction, target):
+        b, s, c, x, y, z = prediction.shape
+
+        prediction = prediction.view(b * s, c, x, y, z)
+        target = target.view(b * s, x, y, z)
+
+        if self.use_weights:
+            weights = torch.tensor(self.weights, dtype=prediction.dtype, device=prediction.device)
+        else:
+            weights = None
+        loss = F.cross_entropy(
+            prediction,
+            target,
+            reduction='none',
+            weight=weights,
+        )
+
+        if self.poly_one:
+            prob = torch.exp(-loss)
+            loss_poly_one = self.poly_one_coefficient * (1-prob)
+            loss = loss + loss_poly_one
+
+        loss = loss.view(b, s, -1)
+        if self.use_top_k:
+            # Penalises the top-k hardest pixels
+            k = int(self.top_k_ratio * loss.shape[2])
+            loss = loss.topk(k, dim=-1)[0]
+
+        return torch.mean(loss)
