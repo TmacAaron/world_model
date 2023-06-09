@@ -6,7 +6,8 @@ from constants import SEMANTIC_SEG_WEIGHTS, VOXEL_SEG_WEIGHTS
 
 
 class SegmentationLoss(nn.Module):
-    def __init__(self, use_top_k=False, top_k_ratio=1.0, use_weights=False, poly_one=False, poly_one_coefficient=0.0):
+    def __init__(self, use_top_k=False, top_k_ratio=1.0, use_weights=False, poly_one=False, poly_one_coefficient=0.0,
+                 is_bev=True):
         super().__init__()
         self.use_top_k = use_top_k
         self.top_k_ratio = top_k_ratio
@@ -15,7 +16,7 @@ class SegmentationLoss(nn.Module):
         self.poly_one_coefficient = poly_one_coefficient
 
         if self.use_weights:
-            self.weights = SEMANTIC_SEG_WEIGHTS
+            self.weights = SEMANTIC_SEG_WEIGHTS if is_bev else VOXEL_SEG_WEIGHTS
 
     def forward(self, prediction, target):
         b, s, c, h, w = prediction.shape

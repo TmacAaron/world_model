@@ -4,7 +4,7 @@ import numpy as np
 import carla
 # import carla_gym.utils.transforms as trans_utils
 # import carla_gym.core.task_actor.common.navigation.route_manipulation as gps_util
-from carlagym_utils import gps_to_location, vec_global_to_ref
+from mile.data.carlagym_utils import gps_to_location, vec_global_to_ref
 
 
 def binary_to_integer(binary_array, n_bits):

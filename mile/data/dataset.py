@@ -9,7 +9,7 @@ import scipy.ndimage
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from constants import CARLA_FPS, VOXEL_LABEL, EGO_VEHICLE_DIMENSION
+from constants import CARLA_FPS, EGO_VEHICLE_DIMENSION, LABEL_MAP
 from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels
 from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
 from mile.utils.geometry_utils import PointCloud
@@ -190,7 +190,13 @@ class CarlaDataset(Dataset):
             os.path.join(self.dataset_path, run_id, data_row['points_semantic_path']),
             allow_pickle=True).item()
         points = convert_coor_lidar(pcd_semantic['points_xyz'], self.cfg.POINTS.LIDAR_POSITION)
-        semantics = pcd_semantic['ObjTag']
+
+        # remap labels
+        remap = np.full((max(LABEL_MAP.keys()) + 1), max(LABEL_MAP.values()), dtype=np.uint8)
+        remap[list(LABEL_MAP.keys())] = list(LABEL_MAP.values())
+        semantics = remap[pcd_semantic['ObjTag']]
+
+        # mask ego-vehicle
         x, y, z = EGO_VEHICLE_DIMENSION
         ego_box = np.array([[-x/2, -y/2, 0], [x/2, y/2, z]])
         ego_idx = ((ego_box[0] < points) & (points < ego_box[1])).all(axis=1)
@@ -205,7 +211,7 @@ class CarlaDataset(Dataset):
         range_view_pcd_depth, range_view_pcd_xyz, range_view_pcd_sem = self.pcd.do_range_projection(points, semantics)
         single_element_t['range_view_pcd_xyzd'] = np.concatenate(
             [range_view_pcd_xyz, range_view_pcd_depth[..., None]], axis=-1).transpose((2, 0, 1))  # x y z d
-        single_element_t['range_view_pcd_label'] = range_view_pcd_sem[None]
+        single_element_t['range_view_pcd_seg'] = range_view_pcd_sem[None].astype(int)
 
         # Load voxels
         voxel_data = np.load(
@@ -213,10 +219,11 @@ class CarlaDataset(Dataset):
         )
         voxel_points = voxel_data[:, :-1]
         voxel_semantics = voxel_data[:, -1]
-        voxel_semantics[voxel_semantics == 255] = len(VOXEL_LABEL)
+        voxel_semantics[voxel_semantics == 255] = 0
+        voxel_semantics = remap[voxel_semantics]
         voxels = np.zeros(self.cfg.VOXEL.SIZE, dtype=np.uint8)
         voxels[voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2]] = voxel_semantics
-        single_element_t['voxel'] = voxels
+        single_element_t['voxel'] = voxels[None]
 
         # Load action and reward
         throttle, steering, brake = data_row['action']

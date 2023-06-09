@@ -1,6 +1,5 @@
 import numpy as np
 
-
 CARLA_FPS = 10
 DISPLAY_SEGMENTATION = True
 DISTORT_IMAGES = False
@@ -73,6 +72,17 @@ VOXEL_LABEL = {
     8:  'Others'
 }
 
+VOXEL_COLOURS = np.array([[255, 255, 255],  # Background
+                          [150, 150, 150],  # Road
+                          [200, 200, 20],  # Road Lines
+                          [200, 200, 200],  # Sidewalk
+                          [0, 83, 138],  # Vehicle
+                          [127, 255, 212],  # Pedestrian
+                          [220, 20, 60],  # Traffic Sign
+                          [100, 150, 35],  # Traffic light
+                          [0, 0, 0],  # Others
+                          ], dtype=np.uint8)
+
 LABEL_MAP = {
     0:  0,  # None
     1:  8,  # Building
@@ -98,4 +108,3 @@ LABEL_MAP = {
     21: 8,  # Water
     22: 8,  # Terrain
 }
-

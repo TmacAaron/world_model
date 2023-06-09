@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as tvf
-import skimage.transform as skt
+# import skimage.transform as skt
 from typing import Dict, Tuple
 
 from mile.utils.geometry_utils import get_out_of_view_mask
@@ -125,7 +125,7 @@ class PreProcess(nn.Module):
                 )
 
         if self.cfg.LIDAR_SEG.ENABLED:
-            batch['range_view_seg_label_1'] = batch['range_view_pcd_label']
+            batch['range_view_seg_label_1'] = batch['range_view_pcd_seg']
             h, w = batch['range_view_seg_label_1'].shape[-2:]
             for downsample_factor in [2, 4]:
                 size = h // downsample_factor, w // downsample_factor
@@ -142,21 +142,21 @@ class PreProcess(nn.Module):
             for downsample_factor in [2, 4]:
                 size = (x // downsample_factor, y // downsample_factor, z // downsample_factor)
                 previous_label_factor = downsample_factor // 2
-                batch[f'voxel_label_{downsample_factor}'] = F.interpolate(
+                batch[f'voxel_label_{downsample_factor}'] = functional_resize_voxel(
                     batch[f'voxel_label_{previous_label_factor}'],
                     size,
                     mode='nearest',
                 )
 
-        if 'points_histogram' in batch:
-            # mask histogram the same as bev.
-            if self.cfg.EVAL.MASK_VIEW:
-                scale = self.cfg.POINTS.HISTOGRAM.RESOLUTION * self.cfg.BEV.RESOLUTION
-                bev_shape = self.bev_out_of_view_mask.shape
-                out_shape = [int(scale * bev_shape[0]), int(scale * bev_shape[1])]
-                view_mask = skt.resize(self.bev_out_of_view_mask, out_shape)
-                batch['points_histogram'] = tvf.center_crop(batch['points_histogram'], out_shape)
-                batch['points_histogram'][:, :, :, view_mask[::-1, ::-1]] = 0
+        # if 'points_histogram' in batch:
+        #     # mask histogram the same as bev.
+        #     if self.cfg.EVAL.MASK_VIEW:
+        #         scale = self.cfg.POINTS.HISTOGRAM.RESOLUTION * self.cfg.BEV.RESOLUTION
+        #         bev_shape = self.bev_out_of_view_mask.shape
+        #         out_shape = [int(scale * bev_shape[0]), int(scale * bev_shape[1])]
+        #         view_mask = skt.resize(self.bev_out_of_view_mask, out_shape)
+        #         batch['points_histogram'] = tvf.center_crop(batch['points_histogram'], out_shape)
+        #         batch['points_histogram'][:, :, :, view_mask[::-1, ::-1]] = 0
             # batch['points_histogram'] = torch.rot90(batch['points_histogram'], k=-1, dims=[3, 4]).contiguous()
 
         return batch
@@ -234,6 +234,15 @@ def functional_resize(x, size, mode=tvf.InterpolationMode.NEAREST):
     x = x.view(b, s, c, *size)
 
     return x
+
+
+def functional_resize_voxel(voxel, size, mode='nearst'):
+    b, s, c, x, y, z = voxel.shape
+    voxel = voxel.view(b * s, c, x, y, z)
+    voxel = F.interpolate(voxel, size, mode=mode)
+    voxel = voxel.view(b, s, c, *size)
+
+    return voxel
 
 
 class PixelAugmentation(nn.Module):

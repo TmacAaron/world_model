@@ -1,14 +1,19 @@
 import os
 
+import numpy as np
 import torch
 import lightning.pytorch as pl
 from torchmetrics import JaccardIndex
 
 from mile.config import get_cfg
 from mile.models.mile import Mile
-from mile.losses import SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss
+from mile.losses import SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss
 from mile.models.preprocess import PreProcess
-from constants import BIRDVIEW_COLOURS
+from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS
+
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use('Agg')
 
 
 class WorldModelTrainer(pl.LightningModule):
@@ -38,6 +43,7 @@ class WorldModelTrainer(pl.LightningModule):
                 use_top_k=self.cfg.SEMANTIC_SEG.USE_TOP_K,
                 top_k_ratio=self.cfg.SEMANTIC_SEG.TOP_K_RATIO,
                 use_weights=self.cfg.SEMANTIC_SEG.USE_WEIGHTS,
+                is_bev=True,
                 )
 
             self.center_loss = SpatialRegressionLoss(norm=2)
@@ -52,6 +58,21 @@ class WorldModelTrainer(pl.LightningModule):
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re_loss = SpatialRegressionLoss(norm=2)
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            self.lidar_seg_loss = SegmentationLoss(
+                use_top_k=self.cfg.LIDAR_SEG.USE_TOP_K,
+                top_k_ratio=self.cfg.LIDAR_SEG.TOP_K_RATIO,
+                use_weights=self.cfg.LIDAR_SEG.USE_WEIGHTS,
+                is_bev=False,
+            )
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            self.voxel_loss = VoxelLoss(
+                use_top_k=self.cfg.VOXEL_SEG.USE_TOP_K,
+                top_k_ratio=self.cfg.VOXEL_SEG.TOP_K_RATIO,
+                use_weights=self.cfg.VOXEL_SEG.USE_WEIGHTS,
+            )
 
     def load_pretrained_weights(self):
         if self.cfg.PRETRAINED.PATH:
@@ -133,6 +154,25 @@ class WorldModelTrainer(pl.LightningModule):
                     target=batch[f'range_view_label_{downsampling_factor}']
                 )
                 losses[f'lidar_re_{downsampling_factor}'] = lidar_re_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_RE
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            for downsampling_factor in [1, 2, 4]:
+                discount = 1 / downsampling_factor
+                lidar_seg_loss = self.lidar_seg_loss(
+                    prediction=output[f'lidar_segmentation_{downsampling_factor}'],
+                    target=batch[f'range_view_seg_label_{downsampling_factor}']
+                )
+                losses[f'lidar_seg_{downsampling_factor}'] = \
+                    lidar_seg_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_SEG
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            for downsampling_factor in [1, 2, 4]:
+                discount = 1 / downsampling_factor
+                voxel_loss = self.voxel_loss(
+                    prediction=output[f'voxel_{downsampling_factor}'],
+                    target=batch[f'voxel_label_{downsampling_factor}'].type(torch.long)
+                )
+                losses[f'voxel_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * voxel_loss
 
         if self.cfg.MODEL.REWARD.ENABLED:
             reward_loss = self.action_loss(output['reward'], batch['reward'])
@@ -226,16 +266,49 @@ class WorldModelTrainer(pl.LightningModule):
             rgb_pred = output['rgb_1'].detach()
 
             visualisation_rgb = torch.cat([rgb_pred, rgb_target], dim=-2).detach()
-            name = f'{name}_rgb'
-            self.logger.experiment.add_video(name, visualisation_rgb, global_step=self.global_step, fps=2)
+            name_ = f'{name}_rgb'
+            self.logger.experiment.add_video(name_, visualisation_rgb, global_step=self.global_step, fps=2)
 
         if self.cfg.LIDAR_RE.ENABLED:
             lidar_target = batch['range_view_label_1'][:, :, -1, :, :]
             lidar_pred = output['lidar_reconstruction_1'].detach()[:, :, -1, :, :]
 
             visualisation_lidar = torch.cat([lidar_pred, lidar_target], dim=-2).detach().unsqueeze(-3)
-            name = f'{name}_lidar'
-            self.logger.experiment.add_video(name, visualisation_lidar, global_step=self.global_step, fps=2)
+            name_ = f'{name}_lidar'
+            self.logger.experiment.add_video(name_, visualisation_lidar, global_step=self.global_step, fps=2)
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            lidar_seg_target = batch['range_view_seg_label_1'][:, :, 0]
+            lidar_seg_pred = torch.argmax(output['lidar_segmentation_1'].detach(), dim=-3)
+
+            colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=lidar_seg_pred.device)
+            lidar_seg_target = colours[lidar_seg_target]
+            lidar_seg_pred = colours[lidar_seg_pred]
+
+            lidar_seg_target = lidar_seg_target.permute(0, 1, 4, 2, 3)
+            lidar_seg_pred = lidar_seg_pred.permute(0, 1, 4, 2, 3)
+
+            visualisation_lidar_seg = torch.cat([lidar_seg_pred, lidar_seg_target], dim=-2).detach()
+            name_ = f'{name}_lidar_seg'
+            self.logger.experiment.add_video(name_, visualisation_lidar_seg, global_step=self.global_step, fps=2)
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            voxel_target = batch['voxel_label_1'][0, 0, 0].cpu().numpy()
+            voxel_pred = torch.argmax(output['voxel_1'].detach(), dim=-4).cpu().numpy()[0, 0]
+            colours = np.asarray(VOXEL_COLOURS, dtype=float) / 255.0
+            voxel_color_target = colours[voxel_target]
+            voxel_color_pred = colours[voxel_pred]
+            name_ = f'{name}_voxel'
+            self.write_voxel_figure(voxel_target, voxel_color_target, f'{name_}_target')
+            self.write_voxel_figure(voxel_pred, voxel_color_pred, f'{name_}_pred')
+
+    def write_voxel_figure(self, voxel, voxel_color, name):
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(projection='3d')
+        ax.voxels(voxel, facecolors=voxel_color, shade=False)
+        ax.view_init(elev=60, azim=165)
+        ax.set_axis_off()
+        self.logger.experiment.add_figure(name, fig, global_step=self.global_step)
 
     def configure_optimizers(self):
         #  Do not decay batch norm parameters and biases
