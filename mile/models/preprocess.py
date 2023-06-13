@@ -187,10 +187,6 @@ class PreProcess(nn.Module):
 
         return batch
 
-    #  for visualization
-    def inverse_normalization_image(self, image):
-        return image * self.image_std + self.image_mean
-
 
 def functional_crop(batch: Dict[str, torch.Tensor], crop: Tuple[int, int, int, int]):
     left, top, right, bottom = crop

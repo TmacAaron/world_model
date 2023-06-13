@@ -17,18 +17,22 @@ from data.data_preprocessing import convert_coor_lidar
 
 
 class DataModule(pl.LightningDataModule):
-    def __init__(self, cfg):
+    def __init__(self, cfg, dataset_root=None):
         super().__init__()
         self.cfg = cfg
         self.batch_size = self.cfg.BATCHSIZE
         self.sequence_length = self.cfg.RECEPTIVE_FIELD + self.cfg.FUTURE_HORIZON
 
+        self.dataset_root = dataset_root
+
         # Will be populated with self.setup()
         self.train_dataset, self.val_dataset = None, None
 
     def setup(self, stage=None):
-        self.train_dataset = CarlaDataset(self.cfg, mode='train', sequence_length=self.sequence_length)
-        self.val_dataset = CarlaDataset(self.cfg, mode='val', sequence_length=self.sequence_length)
+        self.train_dataset = CarlaDataset(
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
+        self.val_dataset = CarlaDataset(
+            self.cfg, mode='val', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
 
         print(f'{len(self.train_dataset)} data points in {self.train_dataset.dataset_path}')
         print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
@@ -60,12 +64,13 @@ class DataModule(pl.LightningDataModule):
 
 
 class CarlaDataset(Dataset):
-    def __init__(self, cfg, mode='train', sequence_length=1):
+    def __init__(self, cfg, mode='train', sequence_length=1, dataset_root=None):
         self.cfg = cfg
         self.mode = mode
         self.sequence_length = sequence_length
+        self.dataset_root = dataset_root if dataset_root else self.cfg.DATASET.DATAROOT
 
-        self.dataset_path = os.path.join(self.cfg.DATASET.DATAROOT, self.cfg.DATASET.VERSION, mode)
+        self.dataset_path = os.path.join(self.dataset_root, self.cfg.DATASET.VERSION, mode)
         self.intrinsics, self.extrinsics = calculate_geometry_from_config(self.cfg)
         self.bev_out_of_view_mask = get_out_of_view_mask(self.cfg)
         self.pcd = PointCloud(
@@ -132,7 +137,11 @@ class CarlaDataset(Dataset):
 
         run_id, indices = self.data_pointers[i]
         for t in indices:
-            single_element_t = self.load_single_element_time_t(run_id, t)
+            try:
+                single_element_t = self.load_single_element_time_t(run_id, t)
+            except:
+                print(f'{run_id}, {t} data is invalid')
+                continue
 
             for k, v in single_element_t.items():
                 batch[k] = batch.get(k, []) + [v]

@@ -34,6 +34,7 @@ _C.TAG = 'default'
 _C.CML_PROJECT = ''
 _C.CML_TASK = ''
 _C.CML_TYPE = ''
+_C.CML_DATASET = ''
 
 _C.GPUS = 1  # how many gpus to use
 _C.PRECISION = '16-mixed'  # 16bit or 32bit
