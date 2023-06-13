@@ -56,7 +56,10 @@ class WorldModelTrainer(pl.LightningModule):
 
         if self.cfg.EVAL.RGB_SUPERVISION:
             self.rgb_loss = SpatialRegressionLoss(norm=1)
-            self.ssim_loss = SSIMLoss(channel=3)
+            if self.cfg.LOSSES.RGB_INSTANCE:
+                self.rgb_instance_loss = SpatialRegressionLoss(norm=1)
+            if self.cfg.LOSSES.SSIM:
+                self.ssim_loss = SSIMLoss(channel=3)
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re_loss = SpatialRegressionLoss(norm=2)
@@ -142,17 +145,31 @@ class WorldModelTrainer(pl.LightningModule):
             for downsampling_factor in [1, 2, 4]:
                 rgb_weight = 0.1
                 discount = 1 / downsampling_factor
-                ssim_weight = 0.6
                 rgb_loss = self.rgb_loss(
                     prediction=output[f'rgb_{downsampling_factor}'],
                     target=batch[f'rgb_label_{downsampling_factor}'],
                 )
-                ssim_loss = self.ssim_loss(
-                    prediction=output[f'rgb_{downsampling_factor}'],
-                    target=batch[f'rgb_label_{downsampling_factor}'],
-                )
-                losses[f'rgb_{downsampling_factor}'] = rgb_weight * discount * rgb_loss * (1-ssim_weight)
-                losses[f'ssim_{downsampling_factor}'] = rgb_weight * discount * ssim_loss * ssim_weight
+                if self.cfg.LOSSES.RGB_INSTANCE:
+                    rgb_instance_loss = self.rgb_instance_loss(
+                        prediction=output[f'rgb_{downsampling_factor}'],
+                        target=batch[f'rgb_label_{downsampling_factor}'],
+                        instance_mask=batch[f'image_instance_mask_{downsampling_factor}']
+                    )
+                else:
+                    rgb_instance_loss = 0
+
+                if self.cfg.LOSSES.SSIM:
+                    ssim_loss = self.ssim_loss(
+                        prediction=output[f'rgb_{downsampling_factor}'],
+                        target=batch[f'rgb_label_{downsampling_factor}'],
+                    )
+                    ssim_weight = 0.6
+                    losses[f'ssim_{downsampling_factor}'] = rgb_weight * discount * ssim_loss * ssim_weight
+                else:
+                    ssim_weight = 0
+
+                losses[f'rgb_{downsampling_factor}'] = \
+                    rgb_weight * discount * (rgb_loss + 0.5 * rgb_instance_loss) * (1 - ssim_weight)
 
         if self.cfg.LIDAR_RE.ENABLED:
             for downsampling_factor in [1, 2, 4]:

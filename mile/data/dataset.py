@@ -9,8 +9,8 @@ import scipy.ndimage
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from constants import CARLA_FPS, EGO_VEHICLE_DIMENSION, LABEL_MAP
-from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels
+from constants import CARLA_FPS, EGO_VEHICLE_DIMENSION, LABEL_MAP, VOXEL_LABEL
+from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels, calculate_instance_mask
 from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
 from mile.utils.geometry_utils import PointCloud
 from data.data_preprocessing import convert_coor_lidar
@@ -233,6 +233,19 @@ class CarlaDataset(Dataset):
         voxels = np.zeros(self.cfg.VOXEL.SIZE, dtype=np.uint8)
         voxels[voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2]] = voxel_semantics
         single_element_t['voxel'] = voxels[None]
+
+        # load depth_semantic image
+        depth_semantic = Image.open(
+            os.path.join(self.dataset_path, run_id, data_row['depth_semantic_path'])
+        )
+        depth_semantic = np.asarray(depth_semantic)
+        semantic_image = depth_semantic[..., -1]
+        single_element_t['semantic_image'] = remap[semantic_image][None].astype(int)
+        single_element_t['image_instance_mask'] = calculate_instance_mask(
+            single_element_t['semantic_image'],
+            vehicle_idx=list(VOXEL_LABEL.keys())[list(VOXEL_LABEL.values()).index('Vehicle')],
+            pedestrian_idx=list(VOXEL_LABEL.keys())[list(VOXEL_LABEL.values()).index('Pedestrian')],
+        )
 
         # Load action and reward
         throttle, steering, brake = data_row['action']

@@ -120,3 +120,9 @@ def preprocess_birdview_and_routemap(birdview):
         processed_birdview = processed_birdview[0]
         route_map = route_map[0]
     return processed_birdview, route_map
+
+
+def calculate_instance_mask(semantics, vehicle_idx, pedestrian_idx):
+    mask = np.zeros_like(semantics)
+    mask[(semantics == vehicle_idx) | (semantics == pedestrian_idx)] = 1
+    return mask.astype(bool)

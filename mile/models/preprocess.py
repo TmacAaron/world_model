@@ -112,6 +112,24 @@ class PreProcess(nn.Module):
                     mode=tvf.InterpolationMode.BILINEAR,
                 )
 
+            if self.cfg.LOSSES.RGB_INSTANCE:
+                batch['semantic_image_1'] = batch['semantic_image']
+                batch['image_instance_mask_1'] = batch['image_instance_mask']
+                h, w = batch['semantic_image_1'].shape[-2:]
+                for downsample_factor in [2, 4]:
+                    size = h // downsample_factor, w // downsample_factor
+                    previous_label_factor = downsample_factor // 2
+                    batch[f'semantic_image_{downsample_factor}'] = functional_resize(
+                        batch[f'semantic_image_{previous_label_factor}'],
+                        size,
+                        mode=tvf.InterpolationMode.NEAREST,
+                    )
+                    batch[f'image_instance_mask_{downsample_factor}'] = functional_resize(
+                        batch[f'image_instance_mask_{previous_label_factor}'],
+                        size,
+                        mode=tvf.InterpolationMode.NEAREST,
+                    )
+
         if self.cfg.LIDAR_RE.ENABLED:
             batch['range_view_label_1'] = batch['range_view_pcd_xyzd'].float() / 100.0
             h, w = batch['range_view_label_1'].shape[-2:]
@@ -198,6 +216,10 @@ def functional_crop(batch: Dict[str, torch.Tensor], crop: Tuple[int, int, int, i
         batch['depth'] = tvf.crop(batch['depth'], top, left, height, width)
     if 'semseg' in batch:
         batch['semseg'] = tvf.crop(batch['semseg'], top, left, height, width)
+    if 'semantic_image' in batch:
+        batch['semantic_image'] = tvf.crop(batch['semantic_image'], top, left, height, width)
+    if 'image_instance_mask' in batch:
+        batch['image_instance_mask'] = tvf.crop(batch['image_instance_mask'], top, left, height, width)
     if 'intrinsics' in batch:
         intrinsics = batch['intrinsics'].clone()
         intrinsics[..., 0, 2] -= left
@@ -219,6 +241,14 @@ def functional_resize_batch(batch, scale):
         intrinsics = batch['intrinsics'].clone()
         intrinsics[..., :2, :] *= scale
         batch['intrinsics'] = intrinsics
+    if 'image_instance_mask' in batch:
+        image = batch['image_instance_mask'].view(b*s, c, h, w)
+        image = tvf.resize(image, size, antialias=True)
+        batch['image_instance_mask'] = image.view(b, s, c, h1, w1)
+    if 'semantic_image' in batch:
+        image = batch['semantic_image'].view(b*s, c, h, w)
+        image = tvf.resize(image, size, antialias=True)
+        batch['semantic_image'] = image.view(b, s, c, h1, w1)
 
     return batch
 

@@ -83,10 +83,10 @@ class SpatialRegressionLoss(nn.Module):
         else:
             raise ValueError(f'Expected norm 1 or 2, but got norm={norm}')
 
-    def forward(self, prediction, target):
+    def forward(self, prediction, target, instance_mask=None):
         assert len(prediction.shape) == 5, 'Must be a 5D tensor'
         # ignore_index is the same across all channels
-        mask = target[:, :, :1] != self.ignore_index
+        mask = instance_mask if instance_mask is not None else target[:, :, :1] != self.ignore_index
         if mask.sum() == 0:
             return prediction.new_zeros(1)[0].float()
 
@@ -199,7 +199,7 @@ class SSIMLoss(nn.Module):
         prediction = prediction.view(b*s, c, h, w)
         target = target.view(b*s, c, h, w)
 
-        loss = 1-self._ssim(prediction, target)
+        loss = 1 - self._ssim(prediction, target)
         return loss
 
     def gaussian(self, window_size, sigma):
