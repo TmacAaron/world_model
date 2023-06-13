@@ -7,7 +7,7 @@ from torchmetrics import JaccardIndex
 
 from mile.config import get_cfg
 from mile.models.mile import Mile
-from mile.losses import SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss
+from mile.losses import SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss
 from mile.models.preprocess import PreProcess
 from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS
 
@@ -26,6 +26,7 @@ class WorldModelTrainer(pl.LightningModule):
         if pretrained_path:
             self.cfg.PRETRAINED.PATH = pretrained_path
         # print(self.cfg)
+        self.vis_step = -1
 
         self.preprocess = PreProcess(self.cfg)
 
@@ -55,6 +56,7 @@ class WorldModelTrainer(pl.LightningModule):
 
         if self.cfg.EVAL.RGB_SUPERVISION:
             self.rgb_loss = SpatialRegressionLoss(norm=1)
+            self.ssim_loss = SSIMLoss(channel=3)
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re_loss = SpatialRegressionLoss(norm=2)
@@ -140,11 +142,17 @@ class WorldModelTrainer(pl.LightningModule):
             for downsampling_factor in [1, 2, 4]:
                 rgb_weight = 0.1
                 discount = 1 / downsampling_factor
+                ssim_weight = 0.6
                 rgb_loss = self.rgb_loss(
                     prediction=output[f'rgb_{downsampling_factor}'],
                     target=batch[f'rgb_label_{downsampling_factor}'],
                 )
-                losses[f'rgb_{downsampling_factor}'] = rgb_weight * discount * rgb_loss
+                ssim_loss = self.ssim_loss(
+                    prediction=output[f'rgb_{downsampling_factor}'],
+                    target=batch[f'rgb_label_{downsampling_factor}'],
+                )
+                losses[f'rgb_{downsampling_factor}'] = rgb_weight * discount * rgb_loss * (1-ssim_weight)
+                losses[f'ssim_{downsampling_factor}'] = rgb_weight * discount * ssim_loss * ssim_weight
 
         if self.cfg.LIDAR_RE.ENABLED:
             for downsampling_factor in [1, 2, 4]:
@@ -213,9 +221,14 @@ class WorldModelTrainer(pl.LightningModule):
         for key, value in loss.items():
             self.log(f'{prefix}_{key}', value)
 
+        if 'ssim_1' in loss.keys():
+            self.log(f'{prefix}_ssim_value', 1 - loss['ssim_1'] / 0.06)
+
         # Visualisation
         if prefix == 'train':
-            visualisation_criteria = self.global_step % self.cfg.LOG_VIDEO_INTERVAL == 0
+            visualisation_criteria = (self.global_step % self.cfg.LOG_VIDEO_INTERVAL == 0) \
+                                   & (self.global_step != self.vis_step)
+            self.vis_step = self.global_step
         else:
             visualisation_criteria = batch_idx == 0
         if visualisation_criteria:

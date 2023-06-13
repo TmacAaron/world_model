@@ -180,3 +180,58 @@ class VoxelLoss(nn.Module):
             loss = loss.topk(k, dim=-1)[0]
 
         return torch.mean(loss)
+
+
+class SSIMLoss(nn.Module):
+    def __init__(self, channel=1, window_size=11, sigma=1.5, L=1, size_average=True):
+        super().__init__()
+        self.window_size = window_size
+        self.size_average = size_average
+        self.channel = channel
+        self.sigma = sigma
+        self.C1 = (0.01 * L) ** 2
+        self.C2 = (0.03 * L) ** 2
+        self.window = self.create_window()
+
+    def forward(self, prediction, target):
+        b, s, c, h, w = prediction.shape
+
+        prediction = prediction.view(b*s, c, h, w)
+        target = target.view(b*s, c, h, w)
+
+        loss = 1-self._ssim(prediction, target)
+        return loss
+
+    def gaussian(self, window_size, sigma):
+        x = torch.arange(window_size)
+        gauss = torch.exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2))
+        return gauss / gauss.sum()
+
+    def create_window(self):
+        _1D_window = self.gaussian(self.window_size, self.sigma).unsqueeze(1)
+        _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
+        window = _2D_window.expand(self.channel, 1, self.window_size, self.window_size).contiguous()
+        return window
+
+    def _ssim(self, prediction, target):
+        window = torch.as_tensor(self.window, dtype=prediction.dtype, device=prediction.device)
+
+        mu1 = F.conv2d(target, window, padding=self.window_size//2, groups=self.channel)
+        mu2 = F.conv2d(prediction, window, padding=self.window_size//2, groups=self.channel)
+
+        mu1_sq = mu1.pow(2)
+        mu2_sq = mu2.pow(2)
+        mu1_mu2 = mu1 * mu2
+
+        sigma1_sq = F.conv2d(target * target, window, padding=self.window_size//2, groups=self.channel) - mu1_sq
+        sigma2_sq = F.conv2d(prediction * prediction, window, padding=self.window_size//2, groups=self.channel) - mu2_sq
+        sigma12 = F.conv2d(target * prediction, window, padding=self.window_size//2, groups=self.channel) - mu1_mu2
+
+        ssim_map = ((2 * mu1_mu2 + self.C1) * (2 * sigma12 + self.C2)) / \
+                   ((mu1_sq + mu2_sq + self.C1) * (sigma1_sq + sigma2_sq + self.C2))
+
+        if self.size_average:
+            return ssim_map.mean()
+        else:
+            return ssim_map.mean(1).mean(1).mean(1)
+
