@@ -4,7 +4,7 @@ import timm
 
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
-from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder, LidarDecoder
+from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder, LidarDecoder, ConvDecoder
 from mile.models.frustum_pooling import FrustumPooling
 from mile.layers.layers import BasicBlock
 from mile.models.transition import RSSM
@@ -206,6 +206,10 @@ class Mile(nn.Module):
                 constant_size=(5, 13),
                 is_segmentation=False,
             )
+            # self.rgb_decoder = ConvDecoder(
+            #     latent_n_channels=state_dim,
+            #     out_channels=3,
+            # )
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re = LidarDecoder(

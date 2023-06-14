@@ -323,3 +323,79 @@ class LidarDecoder(nn.Module):
                 'lidar_reconstruction_2': output['rgb_2'],
                 'lidar_reconstruction_4': output['rgb_4']
             }
+
+
+class ConvDecoder(nn.Module):
+    def __init__(self, latent_n_channels, out_channels=3, mlp_layers=0, layer_norm=True, activation=nn.ELU):
+        super().__init__()
+        n_channels = 512
+        if mlp_layers == 0:
+            layers = [
+                nn.Linear(latent_n_channels, n_channels),  # no activation here in dreamer v2
+            ]
+        else:
+            hidden_dim = n_channels
+            norm = nn.LayerNorm if layer_norm else nn.Identity
+            layers = [
+                nn.Linear(latent_n_channels, hidden_dim),
+                norm(hidden_dim, eps=1e-3),
+                activation(),
+            ]
+            for _ in range(mlp_layers - 1):
+                layers += [
+                    nn.Linear(hidden_dim, hidden_dim),
+                    norm(hidden_dim, eps=1e-3),
+                    activation()
+                ]
+        self.linear = nn.Sequential(*layers, nn.Unflatten(-1, (n_channels, 1, 1)))  # N x n_channels
+
+        self.pre_transpose_conv = nn.Sequential(
+            # *layers,
+            # nn.Unflatten(-1, (n_channels, 1, 5)),
+            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2),  # 5 x 13
+            activation(),
+            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2, padding=2, output_padding=1),  # 10 x 26
+            activation(),
+            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2, padding=2, output_padding=1),  # 20 x 52
+            activation(),
+            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=6, stride=2, padding=2),  # 40 x 104
+            activation(),
+        )
+
+        self.trans_conv1 = nn.Sequential(
+            nn.ConvTranspose2d(n_channels, 256, kernel_size=6, stride=2, padding=2),
+            activation(),
+        )
+        self.head_4 = RGBHead(in_channels=256, n_classes=out_channels, downsample_factor=4)
+        # 256 x 80 x 208
+
+        self.trans_conv2 = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, kernel_size=6, stride=2, padding=2),
+            activation(),
+        )
+        self.head_2 = RGBHead(in_channels=128, n_classes=out_channels, downsample_factor=2)
+        # 128 x 160 x 416
+
+        self.trans_conv3 = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=6, stride=2, padding=2),
+            activation()
+        )
+        self.head_1 = RGBHead(in_channels=64, n_classes=out_channels, downsample_factor=1)
+        # 64 x 320 x 832
+
+    def forward(self, x):
+        x = self.linear(x)  # N x n_channels x 1 x 1
+
+        x = x.repeat(1, 1, 1, 5)
+        # N x n_channels x 1 x 5
+        x = self.pre_transpose_conv(x)
+
+        x = self.trans_conv1(x)
+        output_4 = self.head_4(x)
+        x = self.trans_conv2(x)
+        output_2 = self.head_2(x)
+        x = self.trans_conv3(x)
+        output_1 = self.head_1(x)
+
+        output = {**output_4, **output_2, **output_1}
+        return output
