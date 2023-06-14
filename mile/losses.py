@@ -183,24 +183,16 @@ class VoxelLoss(nn.Module):
 
 
 class SSIMLoss(nn.Module):
-    def __init__(self, channel=1, window_size=11, sigma=1.5, L=1, size_average=True):
+    def __init__(self, channel=1, window_size=11, sigma=1.5, L=1, non_negative=False):
         super().__init__()
         self.window_size = window_size
-        self.size_average = size_average
+        # self.size_average = size_average
         self.channel = channel
         self.sigma = sigma
         self.C1 = (0.01 * L) ** 2
         self.C2 = (0.03 * L) ** 2
         self.window = self.create_window()
-
-    def forward(self, prediction, target):
-        b, s, c, h, w = prediction.shape
-
-        prediction = prediction.view(b*s, c, h, w)
-        target = target.view(b*s, c, h, w)
-
-        loss = 1 - self._ssim(prediction, target)
-        return loss
+        self.non_negative = non_negative
 
     def gaussian(self, window_size, sigma):
         x = torch.arange(window_size)
@@ -216,22 +208,34 @@ class SSIMLoss(nn.Module):
     def _ssim(self, prediction, target):
         window = torch.as_tensor(self.window, dtype=prediction.dtype, device=prediction.device)
 
-        mu1 = F.conv2d(target, window, padding=self.window_size//2, groups=self.channel)
-        mu2 = F.conv2d(prediction, window, padding=self.window_size//2, groups=self.channel)
+        padd = 0
+        # padd = self.window_size // 2
+        mu1 = F.conv2d(target, window, padding=padd, groups=self.channel)
+        mu2 = F.conv2d(prediction, window, padding=padd, groups=self.channel)
 
         mu1_sq = mu1.pow(2)
         mu2_sq = mu2.pow(2)
         mu1_mu2 = mu1 * mu2
 
-        sigma1_sq = F.conv2d(target * target, window, padding=self.window_size//2, groups=self.channel) - mu1_sq
-        sigma2_sq = F.conv2d(prediction * prediction, window, padding=self.window_size//2, groups=self.channel) - mu2_sq
-        sigma12 = F.conv2d(target * prediction, window, padding=self.window_size//2, groups=self.channel) - mu1_mu2
+        sigma1_sq = F.conv2d(target * target, window, padding=padd, groups=self.channel) - mu1_sq
+        sigma2_sq = F.conv2d(prediction * prediction, window, padding=padd, groups=self.channel) - mu2_sq
+        sigma12 = F.conv2d(target * prediction, window, padding=padd, groups=self.channel) - mu1_mu2
 
         ssim_map = ((2 * mu1_mu2 + self.C1) * (2 * sigma12 + self.C2)) / \
                    ((mu1_sq + mu2_sq + self.C1) * (sigma1_sq + sigma2_sq + self.C2))
 
-        if self.size_average:
-            return ssim_map.mean()
-        else:
-            return ssim_map.mean(1).mean(1).mean(1)
+        ssim_batch = ssim_map.mean([1, 2, 3])
+        if self.non_negative:
+            ssim_batch = F.relu(ssim_batch)
+
+        return ssim_batch
+
+    def forward(self, prediction, target):
+        b, s, c, h, w = prediction.shape
+
+        prediction = prediction.view(b*s, c, h, w)
+        target = target.view(b*s, c, h, w)
+
+        loss = 1 - self._ssim(prediction, target)
+        return loss.mean()
 
