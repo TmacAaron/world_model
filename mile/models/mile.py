@@ -4,7 +4,7 @@ import timm
 
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
-from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder, LidarDecoder, ConvDecoder
+from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, LidarDecoder, ConvDecoder
 from mile.models.frustum_pooling import FrustumPooling
 from mile.layers.layers import BasicBlock
 from mile.models.transition import RSSM
@@ -229,29 +229,35 @@ class Mile(nn.Module):
 
         # Voxel reconstruction
         if self.cfg.VOXEL_SEG.ENABLED:
-            self.voxel_feature_xy_decoder = BevDecoder(
+            # self.voxel_feature_xy_decoder = BevDecoder(
+            #     latent_n_channels=state_dim,
+            #     semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
+            #     constant_size=(3, 3),
+            #     is_segmentation=False,
+            # )
+            # self.voxel_feature_xz_decoder = BevDecoder(
+            #     latent_n_channels=state_dim,
+            #     semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
+            #     constant_size=(3, 1),
+            #     is_segmentation=False,
+            # )
+            # self.voxel_feature_yz_decoder = BevDecoder(
+            #     latent_n_channels=state_dim,
+            #     semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
+            #     constant_size=(3, 1),
+            #     is_segmentation=False,
+            # )
+            # self.voxel_decoder = VoxelDecoder0(
+            #     input_channels=self.cfg.VOXEL_SEG.DIMENSION,
+            #     n_classes=self.cfg.VOXEL_SEG.N_CLASSES,
+            #     kernel_size=1,
+            #     feature_channels=self.cfg.VOXEL_SEG.DIMENSION,
+            # )
+            self.voxel_decoder = VoxelDecoder1(
                 latent_n_channels=state_dim,
-                semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
-                constant_size=(3, 3),
-                is_segmentation=False,
-            )
-            self.voxel_feature_xz_decoder = BevDecoder(
-                latent_n_channels=state_dim,
-                semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
-                constant_size=(3, 1),
-                is_segmentation=False,
-            )
-            self.voxel_feature_yz_decoder = BevDecoder(
-                latent_n_channels=state_dim,
-                semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
-                constant_size=(3, 1),
-                is_segmentation=False,
-            )
-            self.voxel_decoder = VoxelDecoder(
-                input_channels=self.cfg.VOXEL_SEG.DIMENSION,
-                n_classes=self.cfg.VOXEL_SEG.N_CLASSES,
-                kernel_size=1,
+                semantic_n_channels=self.cfg.VOXEL_SEG.N_CLASSES,
                 feature_channels=self.cfg.VOXEL_SEG.DIMENSION,
+                constant_size=(3, 3, 1),
             )
 
         # Used during deployment to save last state
@@ -325,10 +331,11 @@ class Mile(nn.Module):
             output = {**output, **lidar_seg_output}
 
         if self.cfg.VOXEL_SEG.ENABLED:
-            voxel_feature_xy = self.voxel_feature_xy_decoder(state)
-            voxel_feature_xz = self.voxel_feature_xz_decoder(state)
-            voxel_feature_yz = self.voxel_feature_yz_decoder(state)
-            voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
+            # voxel_feature_xy = self.voxel_feature_xy_decoder(state)
+            # voxel_feature_xz = self.voxel_feature_xz_decoder(state)
+            # voxel_feature_yz = self.voxel_feature_yz_decoder(state)
+            # voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
+            voxel_decoder_output = self.voxel_decoder(state)
             voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, s)
             output = {**output, **voxel_decoder_output}
 

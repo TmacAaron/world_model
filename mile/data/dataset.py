@@ -23,7 +23,7 @@ class DataModule(pl.LightningDataModule):
         self.batch_size = self.cfg.BATCHSIZE
         self.sequence_length = self.cfg.RECEPTIVE_FIELD + self.cfg.FUTURE_HORIZON
 
-        self.dataset_root = dataset_root
+        self.dataset_root = dataset_root if dataset_root else self.cfg.DATASET.DATAROOT
 
         # Will be populated with self.setup()
         self.train_dataset, self.val_dataset = None, None
@@ -68,9 +68,8 @@ class CarlaDataset(Dataset):
         self.cfg = cfg
         self.mode = mode
         self.sequence_length = sequence_length
-        self.dataset_root = dataset_root if dataset_root else self.cfg.DATASET.DATAROOT
 
-        self.dataset_path = os.path.join(self.dataset_root, self.cfg.DATASET.VERSION, mode)
+        self.dataset_path = os.path.join(dataset_root, self.cfg.DATASET.VERSION, mode)
         self.intrinsics, self.extrinsics = calculate_geometry_from_config(self.cfg)
         self.bev_out_of_view_mask = get_out_of_view_mask(self.cfg)
         self.pcd = PointCloud(

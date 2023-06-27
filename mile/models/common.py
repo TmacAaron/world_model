@@ -111,6 +111,20 @@ class DecoderBlock(nn.Module):
         return self.conv2(x, w)
 
 
+class DecoderBlock3d(nn.Module):
+    def __init__(self, in_channels, out_channels, latent_n_channels, upsample=False):
+        super().__init__()
+        self.upsample = upsample
+        self.conv1 = ConvInstanceNorm3d(in_channels, out_channels, latent_n_channels)
+        self.conv2 = ConvInstanceNorm3d(out_channels, out_channels, latent_n_channels)
+
+    def forward(self, x, w):
+        if self.upsample:
+            x = F.interpolate(x, scale_factor=2.0, mode='trilinear', align_corners=False)
+        x = self.conv1(x, w)
+        return self.conv2(x, w)
+
+
 class ConvInstanceNorm(nn.Module):
     def __init__(self, in_channels, out_channels, latent_n_channels):
         super().__init__()
@@ -120,6 +134,21 @@ class ConvInstanceNorm(nn.Module):
         )
 
         self.adaptive_norm = AdaptiveInstanceNorm(latent_n_channels, out_channels)
+
+    def forward(self, x, w):
+        x = self.conv_act(x)
+        return self.adaptive_norm(x, w)
+
+
+class ConvInstanceNorm3d(nn.Module):
+    def __init__(self, in_channels, out_channels, latent_n_channels):
+        super().__init__()
+        self.conv_act = nn.Sequential(
+            nn.Conv3d(in_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+        self.adaptive_norm = AdaptiveInstanceNorm3d(latent_n_channels, out_channels)
 
     def forward(self, x, w):
         x = self.conv_act(x)
@@ -143,6 +172,28 @@ class AdaptiveInstanceNorm(nn.Module):
 
         # Normalising with the style vector
         style = self.latent_affine(style).unsqueeze(-1).unsqueeze(-1)
+        scale, bias = torch.split(style, split_size_or_sections=self.out_channels, dim=1)
+        out = scale * x + bias
+        return out
+
+
+class AdaptiveInstanceNorm3d(nn.Module):
+    def __init__(self, latent_n_channels, out_channels, epsilon=1e-8):
+        super().__init__()
+        self.out_channels = out_channels
+        self.epsilon = epsilon
+
+        self.latent_affine = nn.Linear(latent_n_channels, 2 * out_channels)
+
+    def forward(self, x, style):
+        #  Instance norm
+        mean = x.mean(dim=(-1, -2, -3), keepdim=True)
+        x = x - mean
+        std = torch.sqrt(torch.mean(x ** 2, dim=(-1, -2, -3), keepdim=True) + self.epsilon)
+        x = x / std
+
+        # Normalising with the style vector
+        style = self.latent_affine(style).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
         scale, bias = torch.split(style, split_size_or_sections=self.out_channels, dim=1)
         out = scale * x + bias
         return out
@@ -185,6 +236,22 @@ class RGBHead(nn.Module):
     def forward(self, x):
         output = {
             f'rgb_{self.downsample_factor}': self.rgb_head(x),
+        }
+        return output
+
+
+class VoxelSemHead(nn.Module):
+    def __init__(self, in_channels, n_classes, downsample_factor):
+        super().__init__()
+        self.downsample_factor = downsample_factor
+
+        self.segmentation_head = nn.Sequential(
+            nn.Conv3d(in_channels, n_classes, kernel_size=1, padding=0),
+        )
+
+    def forward(self, x):
+        output = {
+            f'voxel_{self.downsample_factor}': self.segmentation_head(x),
         }
         return output
 
@@ -292,7 +359,7 @@ class VoxelDecoderScale(nn.Module):
         return logits
 
 
-class VoxelDecoder(nn.Module):
+class VoxelDecoder0(nn.Module):
     def __init__(self, input_channels, n_classes, kernel_size=1, feature_channels=512):
         super().__init__()
 
@@ -307,6 +374,57 @@ class VoxelDecoder(nn.Module):
         return {'voxel_1': output_1,
                 'voxel_2': output_2,
                 'voxel_4': output_4}
+
+
+class VoxelDecoder1(nn.Module):
+    def __init__(self, latent_n_channels, semantic_n_channels, feature_channels=512, constant_size=(3, 3, 1)):
+        super().__init__()
+        n_channels = feature_channels
+
+        self.constant_tensor = nn.Parameter(torch.randn((n_channels, *constant_size), dtype=torch.float32))
+
+        # Input 512 x 3 x 3 x 1
+        self.first_norm = AdaptiveInstanceNorm3d(latent_n_channels, out_channels=n_channels)
+        self.first_conv = ConvInstanceNorm3d(n_channels, n_channels, latent_n_channels)
+        # 512 x 3 x 3 x 1
+
+        self.middle_conv = nn.ModuleList(
+            [DecoderBlock3d(n_channels, n_channels, latent_n_channels, upsample=True) for _ in range(3)]
+        )
+
+        head_module = VoxelSemHead
+        # 512 x 24 x 24 x 8
+        self.conv1 = DecoderBlock3d(n_channels, n_channels // 2, latent_n_channels, upsample=True)
+        self.head_4 = head_module(n_channels // 2, semantic_n_channels, downsample_factor=4)
+        # 256 x 48 x 48 x 16
+
+        self.conv2 = DecoderBlock3d(n_channels // 2, n_channels // 4, latent_n_channels, upsample=True)
+        self.head_2 = head_module(n_channels // 4, semantic_n_channels, downsample_factor=2)
+        # 128 x 96 x 96 x 32
+
+        self.conv3 = DecoderBlock3d(n_channels // 4, n_channels // 8, latent_n_channels, upsample=True)
+        self.head_1 = head_module(n_channels // 8, semantic_n_channels, downsample_factor=1)
+        # 64 x 192 x 192 x 64
+
+    def forward(self, w: Tensor) -> Tensor:
+        b = w.shape[0]
+        x = self.constant_tensor.unsqueeze(0).repeat([b, 1, 1, 1, 1])
+
+        x = self.first_norm(x, w)
+        x = self.first_conv(x, w)
+
+        for module in self.middle_conv:
+            x = module(x, w)
+
+        x = self.conv1(x, w)
+        output_4 = self.head_4(x)
+        x = self.conv2(x, w)
+        output_2 = self.head_2(x)
+        x = self.conv3(x, w)
+        output_1 = self.head_1(x)
+
+        output = {**output_4, **output_2, **output_1}
+        return output
 
 
 class LidarDecoder(nn.Module):
