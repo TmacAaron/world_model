@@ -248,10 +248,15 @@ class VoxelDecoderScale(nn.Module):
         self.weight_xz_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
         self.weight_yz_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
 
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(feature_channels, feature_channels),
+        #     nn.Softplus(),
+        #     nn.Linear(feature_channels, n_classes)
+        # )
         self.classifier = nn.Sequential(
-            nn.Linear(feature_channels, feature_channels),
+            nn.Conv3d(feature_channels, feature_channels, kernel_size=3, stride=1, padding=1),
             nn.Softplus(),
-            nn.Linear(feature_channels, n_classes)
+            nn.Conv3d(feature_channels, n_classes, kernel_size=1, stride=1, padding=0)
         )
 
     def attention_fusion(self, t1, w1, t2, w2):
@@ -279,9 +284,10 @@ class VoxelDecoderScale(nn.Module):
         features_xyz = self.attention_fusion(feature_xy, weights_xy, feature_xz, weights_xz) + \
                        self.attention_fusion(feature_xy, weights_xy, feature_yz, weights_yz)
 
-        B, C, X, Y, Z = features_xyz.size()
-        logits = self.classifier(features_xyz.view(B, C, -1).transpose(1, 2))
-        logits = logits.permute(0, 2, 1).reshape(B, -1, X, Y, Z)
+        # B, C, X, Y, Z = features_xyz.size()
+        # logits = self.classifier(features_xyz.view(B, C, -1).transpose(1, 2))
+        # logits = logits.permute(0, 2, 1).reshape(B, -1, X, Y, Z)
+        logits = self.classifier(features_xyz)
 
         return logits
 
@@ -331,10 +337,10 @@ class ConvDecoder(nn.Module):
         n_channels = 512
         if mlp_layers == 0:
             layers = [
-                nn.Linear(latent_n_channels, n_channels),  # no activation here in dreamer v2
+                nn.Linear(latent_n_channels, 5 * n_channels),  # no activation here in dreamer v2
             ]
         else:
-            hidden_dim = n_channels
+            hidden_dim = 5 * n_channels
             norm = nn.LayerNorm if layer_norm else nn.Identity
             layers = [
                 nn.Linear(latent_n_channels, hidden_dim),
@@ -347,7 +353,7 @@ class ConvDecoder(nn.Module):
                     norm(hidden_dim, eps=1e-3),
                     activation()
                 ]
-        self.linear = nn.Sequential(*layers, nn.Unflatten(-1, (n_channels, 1, 1)))  # N x n_channels
+        self.linear = nn.Sequential(*layers, nn.Unflatten(-1, (n_channels, 1, 5)))  # N x n_channels
 
         self.pre_transpose_conv = nn.Sequential(
             # *layers,
@@ -386,7 +392,7 @@ class ConvDecoder(nn.Module):
     def forward(self, x):
         x = self.linear(x)  # N x n_channels x 1 x 1
 
-        x = x.repeat(1, 1, 1, 5)
+        # x = x.repeat(1, 1, 1, 5)
         # N x n_channels x 1 x 5
         x = self.pre_transpose_conv(x)
 

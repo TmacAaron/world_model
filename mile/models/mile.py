@@ -200,16 +200,16 @@ class Mile(nn.Module):
 
         # RGB reconstruction
         if self.cfg.EVAL.RGB_SUPERVISION:
-            self.rgb_decoder = BevDecoder(
-                latent_n_channels=state_dim,
-                semantic_n_channels=3,
-                constant_size=(5, 13),
-                is_segmentation=False,
-            )
-            # self.rgb_decoder = ConvDecoder(
+            # self.rgb_decoder = BevDecoder(
             #     latent_n_channels=state_dim,
-            #     out_channels=3,
+            #     semantic_n_channels=3,
+            #     constant_size=(5, 13),
+            #     is_segmentation=False,
             # )
+            self.rgb_decoder = ConvDecoder(
+                latent_n_channels=state_dim,
+                out_channels=3,
+            )
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re = LidarDecoder(
