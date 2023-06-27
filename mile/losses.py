@@ -333,6 +333,6 @@ class SSIMLoss(nn.Module):
         prediction = prediction.view(b*s, c, h, w)
         target = target.view(b*s, c, h, w)
 
-        loss = 1 - self._ssim(prediction, target)
+        loss = self._ssim(prediction, target)
         return loss.mean()
 

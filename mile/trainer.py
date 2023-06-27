@@ -62,6 +62,7 @@ class WorldModelTrainer(pl.LightningModule):
                 self.rgb_instance_loss = SpatialRegressionLoss(norm=1)
             if self.cfg.LOSSES.SSIM:
                 self.ssim_loss = SSIMLoss(channel=3)
+            self.ssim_metric = SSIMLoss(channel=3)
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re_loss = SpatialRegressionLoss(norm=2)
@@ -166,7 +167,7 @@ class WorldModelTrainer(pl.LightningModule):
                     rgb_instance_loss = 0
 
                 if self.cfg.LOSSES.SSIM:
-                    ssim_loss = self.ssim_loss(
+                    ssim_loss = 1 - self.ssim_loss(
                         prediction=output[f'rgb_{downsampling_factor}'],
                         target=batch[f'rgb_label_{downsampling_factor}'],
                     )
@@ -268,8 +269,12 @@ class WorldModelTrainer(pl.LightningModule):
         for key, value in loss.items():
             self.log(f'{prefix}_{key}', value)
 
-        if 'ssim_1' in loss.keys():
-            self.log(f'{prefix}_ssim_value', 1 - loss['ssim_1'] / 0.06)
+        if self.cfg.EVAL.RGB_SUPERVISION:
+            ssim_value = self.ssim_metric(
+                prediction=output[f'rgb_1'].detach(),
+                target=batch[f'rgb_label_1'],
+            )
+            self.log(f'{prefix}_ssim', ssim_value)
 
         # Visualisation
         if prefix == 'train':
