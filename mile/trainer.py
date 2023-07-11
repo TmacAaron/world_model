@@ -11,6 +11,7 @@ from mile.losses import \
     SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss, SemScalLoss, GeoScalLoss
 from mile.metrics import SSCMetrics
 from mile.models.preprocess import PreProcess
+from mile.utils.geometry_utils import PointCloud
 from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS
 
 import matplotlib
@@ -30,6 +31,7 @@ class WorldModelTrainer(pl.LightningModule):
         # print(self.cfg)
         self.vis_step = -1
 
+        self.cml_logger = None
         self.preprocess = PreProcess(self.cfg)
 
         # Model
@@ -66,6 +68,12 @@ class WorldModelTrainer(pl.LightningModule):
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re_loss = SpatialRegressionLoss(norm=2)
+            self.pcd = PointCloud(
+                self.cfg.POINTS.CHANNELS,
+                self.cfg.POINTS.HORIZON_RESOLUTION,
+                *self.cfg.POINTS.FOV,
+                self.cfg.POINTS.LIDAR_POSITION
+            )
 
         if self.cfg.LIDAR_SEG.ENABLED:
             self.lidar_seg_loss = SegmentationLoss(
@@ -85,6 +93,9 @@ class WorldModelTrainer(pl.LightningModule):
             self.geo_scal_loss = GeoScalLoss()
             self.train_metrics = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
             self.val_metrics = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
+
+    def get_cml_logger(self, cml_logger):
+        self.cml_logger = cml_logger
 
     def load_pretrained_weights(self):
         if self.cfg.PRETRAINED.PATH:
@@ -350,12 +361,42 @@ class WorldModelTrainer(pl.LightningModule):
             self.logger.experiment.add_video(name_, visualisation_rgb, global_step=self.global_step, fps=2)
 
         if self.cfg.LIDAR_RE.ENABLED:
-            lidar_target = batch['range_view_label_1'][:, :, -1, :, :]
-            lidar_pred = output['lidar_reconstruction_1'].detach()[:, :, -1, :, :]
+            lidar_target = batch['range_view_label_1']
+            lidar_pred = output['lidar_reconstruction_1'].detach()
 
-            visualisation_lidar = torch.cat([lidar_pred, lidar_target], dim=-2).detach().unsqueeze(-3)
+            visualisation_lidar = torch.cat(
+                [lidar_pred[:, :, -1, :, :], lidar_target[:, :, -1, :, :]],
+                dim=-2).detach().unsqueeze(-3)
             name_ = f'{name}_lidar'
             self.logger.experiment.add_video(name_, visualisation_lidar, global_step=self.global_step, fps=2)
+
+            pcd_target = lidar_target[0, 0].cpu().detach().numpy().transpose(1, 2, 0) * 100
+            # pcd_target = pcd_target[..., :-1].flatten(1, 2)
+            pcd_target = pcd_target[pcd_target[..., -1] > 0][..., :-1]
+            pcd_target0 = self.pcd.restore_pcd_coor(lidar_target[0, 0, -1].cpu().numpy() * 100)
+            pcd_pred0 = self.pcd.restore_pcd_coor(lidar_pred[0, 0, -1].cpu().numpy() * 100)
+            pcd_pred1 = lidar_pred[0, 0].cpu().detach().numpy().transpose(1, 2, 0) * 100
+            # pcd_pred1 = pcd_pred1[..., :-1].flatten(1, 2)
+            pcd_pred1 = pcd_pred1[pcd_pred1[..., -1] > 0][..., :-1]
+
+            if self.cml_logger is not None:
+                name_ = f'{name}_pcd'
+                self.cml_logger.report_scatter3d(title=f'{name_}_target', series=prefix, scatter=pcd_target,
+                                                 iteration=self.global_step, mode='markers',
+                                                 extra_layout={'marker': {'size': 1}})
+                self.cml_logger.report_scatter3d(title=f'{name_}_target_d', series=prefix, scatter=pcd_target0,
+                                                 iteration=self.global_step, mode='markers',
+                                                 extra_layout={'marker': {'size': 1}})
+                self.cml_logger.report_scatter3d(title=f'{name_}_pred', series=prefix, scatter=pcd_pred1,
+                                                 iteration=self.global_step, mode='markers',
+                                                 extra_layout={'marker': {'size': 1}})
+                self.cml_logger.report_scatter3d(title=f'{name_}_pred_d', series=prefix, scatter=pcd_pred0,
+                                                 iteration=self.global_step, mode='markers',
+                                                 extra_layout={'marker': {'size': 1}})
+            # self.logger.experiment.add_mesh(f'{name_}_target', vertices=pcd_target)
+            # self.logger.experiment.add_mesh(f'{name_}_target_d', vertices=pcd_target0[None])
+            # self.logger.experiment.add_mesh(f'{name_}_pred', vertices=pcd_pred1)
+            # self.logger.experiment.add_mesh(f'{name_}_pred_d', vertices=pcd_pred0[None])
 
         if self.cfg.LIDAR_SEG.ENABLED:
             lidar_seg_target = batch['range_view_seg_label_1'][:, :, 0]

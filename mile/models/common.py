@@ -455,10 +455,10 @@ class ConvDecoder(nn.Module):
         n_channels = 512
         if mlp_layers == 0:
             layers = [
-                nn.Linear(latent_n_channels, 5 * n_channels),  # no activation here in dreamer v2
+                nn.Linear(latent_n_channels, n_channels),  # no activation here in dreamer v2
             ]
         else:
-            hidden_dim = 5 * n_channels
+            hidden_dim = n_channels
             norm = nn.LayerNorm if layer_norm else nn.Identity
             layers = [
                 nn.Linear(latent_n_channels, hidden_dim),
@@ -471,12 +471,13 @@ class ConvDecoder(nn.Module):
                     norm(hidden_dim, eps=1e-3),
                     activation()
                 ]
-        self.linear = nn.Sequential(*layers, nn.Unflatten(-1, (n_channels, 1, 5)))  # N x n_channels
+        self.linear = nn.Sequential(*layers, nn.Unflatten(-1, (n_channels, 1, 1)))  # N x n_channels
 
         self.pre_transpose_conv = nn.Sequential(
             # *layers,
             # nn.Unflatten(-1, (n_channels, 1, 5)),
-            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2),  # 5 x 13
+            # nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2),  # 5 x 13
+            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=(5, 13)),
             activation(),
             nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2, padding=2, output_padding=1),  # 10 x 26
             activation(),
