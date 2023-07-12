@@ -2,7 +2,9 @@ import git
 import os
 import socket
 import time
+from weakref import proxy
 
+import torch
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.callbacks import ModelSummary, LearningRateMonitor
@@ -24,6 +26,26 @@ class SaveGitDiffHashCallback(pl.Callback):
         checkpoint['world_size'] = trainer.world_size
         checkpoint['git_hash'] = trainer.git_hash
         checkpoint['git_diff'] = trainer.git_diff
+
+
+class MyModelCheckpoint(ModelCheckpoint):
+    def _save_checkpoint(self, trainer: "pl.Trainer", filepath: str) -> None:
+        filename = filepath.split('/')[-1]
+        _checkpoint = trainer._checkpoint_connector.dump_checkpoint(self.save_weights_only)
+        try:
+            torch.save(_checkpoint, filename)
+        except AttributeError as err:
+            key = "hyper_parameters"
+            _checkpoint.pop(key, None)
+            print(f"Warning, `{key}` dropped from checkpoint. An attribute is not picklable: {err}")
+            torch.save(_checkpoint, filename)
+
+        self._last_global_step_saved = trainer.global_step
+
+        # notify loggers
+        if trainer.is_global_zero:
+            for logger in trainer.loggers:
+                logger.after_save_checkpoint(proxy(self))
 
 
 def main():
@@ -52,7 +74,7 @@ def main():
         ModelSummary(),
         SaveGitDiffHashCallback(),
         LearningRateMonitor(),
-        ModelCheckpoint(
+        MyModelCheckpoint(
             save_dir, every_n_train_steps=cfg.VAL_CHECK_INTERVAL,
         ),
     ]
