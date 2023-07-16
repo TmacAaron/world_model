@@ -428,10 +428,10 @@ class VoxelDecoder1(nn.Module):
 
 
 class LidarDecoder(nn.Module):
-    def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(3, 3), is_segmentation=True):
+    def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(1, 16), is_segmentation=True):
         super().__init__()
         self.is_seg = is_segmentation
-        self.decoder = BevDecoder(latent_n_channels, semantic_n_channels, constant_size, is_segmentation=False)
+        self.decoder = ConvDecoder(latent_n_channels, semantic_n_channels, constant_size)
 
     def forward(self, x):
         output = self.decoder(x)
@@ -450,7 +450,8 @@ class LidarDecoder(nn.Module):
 
 
 class ConvDecoder(nn.Module):
-    def __init__(self, latent_n_channels, out_channels=3, mlp_layers=0, layer_norm=True, activation=nn.ELU):
+    def __init__(self, latent_n_channels, out_channels, constant_size=(5, 13), mlp_layers=0, layer_norm=True,
+                 activation=nn.ELU):
         super().__init__()
         n_channels = 512
         if mlp_layers == 0:
@@ -477,7 +478,7 @@ class ConvDecoder(nn.Module):
             # *layers,
             # nn.Unflatten(-1, (n_channels, 1, 5)),
             # nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2),  # 5 x 13
-            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=(5, 13)),
+            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=constant_size),
             activation(),
             nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2, padding=2, output_padding=1),  # 10 x 26
             activation(),

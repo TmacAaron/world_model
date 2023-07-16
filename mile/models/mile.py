@@ -153,6 +153,8 @@ class Mile(nn.Module):
                 nn.Flatten(start_dim=1),
             )
 
+            self.embedding_combine = nn.Linear(2 * embedding_n_channels, embedding_n_channels)
+
         # Bev network
         self.backbone_bev = timm.create_model(
             cfg.MODEL.BEV.BACKBONE,
@@ -209,6 +211,7 @@ class Mile(nn.Module):
             self.rgb_decoder = ConvDecoder(
                 latent_n_channels=state_dim,
                 out_channels=3,
+                constant_size=(5, 13),
             )
 
         if self.cfg.LIDAR_RE.ENABLED:
@@ -414,7 +417,8 @@ class Mile(nn.Module):
             lidar_xs = self.range_view_encoder(range_view)
             lidar_features = self.range_view_decoder(lidar_xs)
             lidar_embedding = self.range_view_state_conv(lidar_features)
-            embedding = (lidar_embedding + embedding) / 2
+            # embedding = (lidar_embedding + embedding) / 2
+            embedding = self.embedding_combine(torch.cat([embedding, lidar_embedding], dim=-1))
 
         # if self.cfg.MODEL.LIDAR.MULTI_VIEW:
         #     points_histogram_xz = pack_sequence_dim(batch['points_histogram_xz'])
