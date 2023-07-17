@@ -12,7 +12,7 @@ from mile.losses import \
 from mile.metrics import SSCMetrics
 from mile.models.preprocess import PreProcess
 from mile.utils.geometry_utils import PointCloud
-from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS
+from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS, VOXEL_LABEL
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -312,8 +312,9 @@ class WorldModelTrainer(pl.LightningModule):
             self.metric_iou_val.reset()
 
         if self.cfg.VOXEL_SEG.ENABLED:
-            class_names_voxel = ['Background', 'Road', 'RoadLines', 'Sidewalk', 'Vehicle',
-                                 'Pedestrian', 'TrafficSign', 'TrafficLight', 'Others']
+            # class_names_voxel = ['Background', 'Road', 'RoadLines', 'Sidewalk', 'Vehicle',
+            #                      'Pedestrian', 'TrafficSign', 'TrafficLight', 'Others']
+            class_names_voxel = list(VOXEL_LABEL.values())
             metric_list = [("train", self.train_metrics), ("val", self.val_metrics)]
 
             for prefix, metric in metric_list:

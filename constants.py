@@ -71,6 +71,11 @@ VOXEL_LABEL = {
     7:  'TrafficLight',
     8:  'Others'
 }
+# VOXEL_LABEL = {
+#     0:  'Background',
+#     1:  'Occupancy',
+# }
+# VOXEL_LABEL = VOXEL_LABEL_CARLA
 
 VOXEL_COLOURS = np.array([[255, 255, 255],  # Background
                           [150, 150, 150],  # Road
