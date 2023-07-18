@@ -240,6 +240,70 @@ class RGBHead(nn.Module):
         return output
 
 
+class LidarReHead(nn.Module):
+    def __init__(self, in_channels, n_classes, downsample_factor):
+        super().__init__()
+        self.downsample_factor = downsample_factor
+
+        self.lidar_re_head = nn.Sequential(
+            nn.Conv2d(in_channels, n_classes, kernel_size=1, padding=0),
+        )
+
+    def forward(self, x):
+        output = {
+            f'lidar_reconstruction_{self.downsample_factor}': self.lidar_re_head(x),
+        }
+        return output
+
+
+class LidarSegHead(nn.Module):
+    def __init__(self, in_channels, n_classes, downsample_factor):
+        super().__init__()
+        self.downsample_factor = downsample_factor
+
+        self.seg_head = nn.Sequential(
+            nn.Conv2d(in_channels, n_classes, kernel_size=1, padding=0),
+        )
+
+    def forward(self, x):
+        output = {
+            f'lidar_segmentation_{self.downsample_factor}': self.seg_head(x),
+        }
+        return output
+
+
+class SemHead(nn.Module):
+    def __init__(self, in_channels, n_classes, downsample_factor):
+        super().__init__()
+        self.downsample_factor = downsample_factor
+
+        self.sem_head = nn.Sequential(
+            nn.Conv2d(in_channels, n_classes, kernel_size=1, padding=0),
+        )
+
+    def forward(self, x):
+        output = {
+            f'semantic_image_{self.downsample_factor}': self.sem_head(x),
+        }
+        return output
+
+
+class DepthHead(nn.Module):
+    def __init__(self, in_channels, n_classes, downsample_factor):
+        super().__init__()
+        self.downsample_factor = downsample_factor
+
+        self.depth_head = nn.Sequential(
+            nn.Conv2d(in_channels, n_classes, kernel_size=1, padding=0),
+        )
+
+    def forward(self, x):
+        output = {
+            f'depth_{self.downsample_factor}': self.depth_head(x),
+        }
+        return output
+
+
 class VoxelSemHead(nn.Module):
     def __init__(self, in_channels, n_classes, downsample_factor):
         super().__init__()
@@ -257,7 +321,7 @@ class VoxelSemHead(nn.Module):
 
 
 class BevDecoder(nn.Module):
-    def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(3, 3), is_segmentation=True):
+    def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(3, 3), head='bev'):
         super().__init__()
         n_channels = 512
 
@@ -272,7 +336,13 @@ class BevDecoder(nn.Module):
             [DecoderBlock(n_channels, n_channels, latent_n_channels, upsample=True) for _ in range(3)]
         )
 
-        head_module = SegmentationHead if is_segmentation else RGBHead
+        head_modules = {'rgb': RGBHead,
+                        'bev': SegmentationHead,
+                        'depth': DepthHead,
+                        'sem_image': SemHead,
+                        'lidar_re': LidarReHead,
+                        'lidar_seg': LidarSegHead}
+        head_module = head_modules[head] if head in head_modules else RGBHead
         # 512 x 24 x 24
         self.conv1 = DecoderBlock(n_channels, 256, latent_n_channels, upsample=True)
         self.head_4 = head_module(256, semantic_n_channels, downsample_factor=4)
@@ -427,31 +497,31 @@ class VoxelDecoder1(nn.Module):
         return output
 
 
-class LidarDecoder(nn.Module):
-    def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(1, 16), is_segmentation=True):
-        super().__init__()
-        self.is_seg = is_segmentation
-        self.decoder = ConvDecoder(latent_n_channels, semantic_n_channels, constant_size)
-
-    def forward(self, x):
-        output = self.decoder(x)
-        if self.is_seg:
-            return{
-                'lidar_segmentation_1': output['rgb_1'],
-                'lidar_segmentation_2': output['rgb_2'],
-                'lidar_segmentation_4': output['rgb_4'],
-            }
-        else:
-            return {
-                'lidar_reconstruction_1': output['rgb_1'],
-                'lidar_reconstruction_2': output['rgb_2'],
-                'lidar_reconstruction_4': output['rgb_4']
-            }
+# class LidarDecoder(nn.Module):
+#     def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(1, 16), is_segmentation=True):
+#         super().__init__()
+#         self.is_seg = is_segmentation
+#         self.decoder = ConvDecoder(latent_n_channels, semantic_n_channels, constant_size)
+#
+#     def forward(self, x):
+#         output = self.decoder(x)
+#         if self.is_seg:
+#             return{
+#                 'lidar_segmentation_1': output['rgb_1'],
+#                 'lidar_segmentation_2': output['rgb_2'],
+#                 'lidar_segmentation_4': output['rgb_4'],
+#             }
+#         else:
+#             return {
+#                 'lidar_reconstruction_1': output['rgb_1'],
+#                 'lidar_reconstruction_2': output['rgb_2'],
+#                 'lidar_reconstruction_4': output['rgb_4']
+#             }
 
 
 class ConvDecoder(nn.Module):
     def __init__(self, latent_n_channels, out_channels, constant_size=(5, 13), mlp_layers=0, layer_norm=True,
-                 activation=nn.ELU):
+                 activation=nn.ELU, head='rgb'):
         super().__init__()
         n_channels = 512
         if mlp_layers == 0:
@@ -488,25 +558,33 @@ class ConvDecoder(nn.Module):
             activation(),
         )
 
+        head_modules = {'rgb': RGBHead,
+                        'bev': SegmentationHead,
+                        'depth': DepthHead,
+                        'sem_image': SemHead,
+                        'lidar_re': LidarReHead,
+                        'lidar_seg': LidarSegHead}
+        head_module = head_modules[head] if head in head_modules else RGBHead
+
         self.trans_conv1 = nn.Sequential(
             nn.ConvTranspose2d(n_channels, 256, kernel_size=6, stride=2, padding=2),
             activation(),
         )
-        self.head_4 = RGBHead(in_channels=256, n_classes=out_channels, downsample_factor=4)
+        self.head_4 = head_module(in_channels=256, n_classes=out_channels, downsample_factor=4)
         # 256 x 80 x 208
 
         self.trans_conv2 = nn.Sequential(
             nn.ConvTranspose2d(256, 128, kernel_size=6, stride=2, padding=2),
             activation(),
         )
-        self.head_2 = RGBHead(in_channels=128, n_classes=out_channels, downsample_factor=2)
+        self.head_2 = head_module(in_channels=128, n_classes=out_channels, downsample_factor=2)
         # 128 x 160 x 416
 
         self.trans_conv3 = nn.Sequential(
             nn.ConvTranspose2d(128, 64, kernel_size=6, stride=2, padding=2),
             activation()
         )
-        self.head_1 = RGBHead(in_channels=64, n_classes=out_channels, downsample_factor=1)
+        self.head_1 = head_module(in_channels=64, n_classes=out_channels, downsample_factor=1)
         # 64 x 320 x 832
 
     def forward(self, x):

@@ -4,7 +4,7 @@ import timm
 
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
-from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, LidarDecoder, ConvDecoder
+from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, ConvDecoder
 from mile.models.frustum_pooling import FrustumPooling
 from mile.layers.layers import BasicBlock
 from mile.models.transition import RSSM
@@ -198,6 +198,7 @@ class Mile(nn.Module):
             self.bev_decoder = BevDecoder(
                 latent_n_channels=state_dim,
                 semantic_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
+                head='bev',
             )
 
         # RGB reconstruction
@@ -206,28 +207,45 @@ class Mile(nn.Module):
             #     latent_n_channels=state_dim,
             #     semantic_n_channels=3,
             #     constant_size=(5, 13),
-            #     is_segmentation=False,
+            #     head='rgb',
             # )
             self.rgb_decoder = ConvDecoder(
                 latent_n_channels=state_dim,
                 out_channels=3,
                 constant_size=(5, 13),
+                head='rgb'
             )
 
         if self.cfg.LIDAR_RE.ENABLED:
-            self.lidar_re = LidarDecoder(
+            self.lidar_re = ConvDecoder(
                 latent_n_channels=state_dim,
-                semantic_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
+                out_channels=self.cfg.LIDAR_RE.N_CHANNELS,
                 constant_size=(1, 16),
-                is_segmentation=False,
+                head='lidar_re',
             )
 
         if self.cfg.LIDAR_SEG.ENABLED:
-            self.lidar_segmentation = LidarDecoder(
+            self.lidar_segmentation = ConvDecoder(
                 latent_n_channels=state_dim,
-                semantic_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
+                out_channels=self.cfg.LIDAR_SEG.N_CLASSES,
                 constant_size=(1, 16),
-                is_segmentation=True,
+                head='lidar_seg',
+            )
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            self.sem_image_decoder = ConvDecoder(
+                latent_n_channels=state_dim,
+                out_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
+                constant_size=(5, 13),
+                head='sem_image',
+            )
+
+        if self.cfg.DEPTH.ENABLED:
+            self.depth_image_decoder = ConvDecoder(
+                latent_n_channels=state_dim,
+                out_channels=1,
+                constant_size=(5, 13),
+                head='depth',
             )
 
         # Voxel reconstruction
@@ -332,6 +350,16 @@ class Mile(nn.Module):
             lidar_seg_output = self.lidar_segmentation(state)
             lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, s)
             output = {**output, **lidar_seg_output}
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            sem_image_output = self.sem_image_decoder(state)
+            sem_image_output = unpack_sequence_dim(sem_image_output, b, s)
+            output = {**output, **sem_image_output}
+
+        if self.cfg.DEPTH.ENABLED:
+            depth_image_output = self.depth_image_decoder(state)
+            depth_image_output = unpack_sequence_dim(depth_image_output, b, s)
+            output = {**output, **depth_image_output}
 
         if self.cfg.VOXEL_SEG.ENABLED:
             # voxel_feature_xy = self.voxel_feature_xy_decoder(state)

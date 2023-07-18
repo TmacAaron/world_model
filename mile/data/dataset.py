@@ -9,7 +9,7 @@ import scipy.ndimage
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from constants import CARLA_FPS, EGO_VEHICLE_DIMENSION, LABEL_MAP, VOXEL_LABEL
+from constants import CARLA_FPS, EGO_VEHICLE_DIMENSION, LABEL_MAP, VOXEL_LABEL, VOXEL_LABEL_CARLA
 from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels, calculate_instance_mask
 from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
 from mile.utils.geometry_utils import PointCloud
@@ -212,26 +212,29 @@ class CarlaDataset(Dataset):
         points = points[~ego_idx]
         # single_element_t['points'] = points
         # single_element_t['points_label'] = pcd_semantic['ObjTag'].astype('uint8')
-        single_element_t['points_histogram_xy'], \
-        single_element_t['points_histogram_xz'], \
-        single_element_t['points_histogram_yz'] = lidar_to_histogram_features(points, self.cfg)
+        # single_element_t['points_histogram_xy'], \
+        # single_element_t['points_histogram_xz'], \
+        # single_element_t['points_histogram_yz'] = lidar_to_histogram_features(points, self.cfg)
 
         range_view_pcd_depth, range_view_pcd_xyz, range_view_pcd_sem = self.pcd.do_range_projection(points, semantics)
-        single_element_t['range_view_pcd_xyzd'] = np.concatenate(
-            [range_view_pcd_xyz, range_view_pcd_depth[..., None]], axis=-1).transpose((2, 0, 1))  # x y z d
-        single_element_t['range_view_pcd_seg'] = range_view_pcd_sem[None].astype(int)
+        if self.cfg.LIDAR_RE.ENABLED:
+            single_element_t['range_view_pcd_xyzd'] = np.concatenate(
+                [range_view_pcd_xyz, range_view_pcd_depth[..., None]], axis=-1).transpose((2, 0, 1))  # x y z d
+        if self.cfg.LIDAR_SEG.ENABLED:
+            single_element_t['range_view_pcd_seg'] = range_view_pcd_sem[None].astype(int)
 
         # Load voxels
-        voxel_data = np.load(
-            os.path.join(self.dataset_path, run_id, data_row['voxel_path'])
-        )
-        voxel_points = voxel_data[:, :-1]
-        voxel_semantics = voxel_data[:, -1]
-        voxel_semantics[voxel_semantics == 255] = 0
-        voxel_semantics = remap[voxel_semantics]
-        voxels = np.zeros(self.cfg.VOXEL.SIZE, dtype=np.uint8)
-        voxels[voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2]] = voxel_semantics
-        single_element_t['voxel'] = voxels[None]
+        if self.cfg.VOXEL_SEG.ENABLED:
+            voxel_data = np.load(
+                os.path.join(self.dataset_path, run_id, data_row['voxel_path'])
+            )
+            voxel_points = voxel_data[:, :-1]
+            voxel_semantics = voxel_data[:, -1]
+            voxel_semantics[voxel_semantics == 255] = 0
+            voxel_semantics = remap[voxel_semantics]
+            voxels = np.zeros(self.cfg.VOXEL.SIZE, dtype=np.uint8)
+            voxels[voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2]] = voxel_semantics
+            single_element_t['voxel'] = voxels[None]
 
         # load depth_semantic image
         depth_semantic = Image.open(
@@ -239,12 +242,23 @@ class CarlaDataset(Dataset):
         )
         depth_semantic = np.asarray(depth_semantic)
         semantic_image = depth_semantic[..., -1]
-        single_element_t['semantic_image'] = remap[semantic_image][None].astype(int)
-        single_element_t['image_instance_mask'] = calculate_instance_mask(
-            single_element_t['semantic_image'],
-            vehicle_idx=list(VOXEL_LABEL.keys())[list(VOXEL_LABEL.values()).index('Vehicle')],
-            pedestrian_idx=list(VOXEL_LABEL.keys())[list(VOXEL_LABEL.values()).index('Pedestrian')],
-        )
+        if self.cfg.LOSSES.RGB_INSTANCE:
+            single_element_t['image_instance_mask'] = calculate_instance_mask(
+                semantic_image[None],
+                vehicle_idx=list(VOXEL_LABEL_CARLA.keys())[list(VOXEL_LABEL_CARLA.values()).index('Vehicle')],
+                pedestrian_idx=list(VOXEL_LABEL_CARLA.keys())[list(VOXEL_LABEL_CARLA.values()).index('Pedestrian')],
+            )
+
+        # load semantic image
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            single_element_t['semantic_image'] = remap[semantic_image][None].astype(int)
+        # load depth
+        if self.cfg.DEPTH.ENABLED:
+            depth_color = depth_semantic[..., :-1].transpose((2, 0, 1)).astype(float)
+            single_element_t['depth_color'] = depth_color / 255.0
+            depth = (256 ** 2 * depth_color[0] + 256 * depth_color[1] + depth_color[2]) / (256 ** 3 - 1)
+            depth[depth > 0.999] = -1
+            single_element_t['depth'] = depth[None]
 
         # Load action and reward
         throttle, steering, brake = data_row['action']

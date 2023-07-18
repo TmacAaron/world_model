@@ -113,22 +113,40 @@ class PreProcess(nn.Module):
                 )
 
             if self.cfg.LOSSES.RGB_INSTANCE:
-                batch['semantic_image_1'] = batch['semantic_image']
                 batch['image_instance_mask_1'] = batch['image_instance_mask']
-                h, w = batch['semantic_image_1'].shape[-2:]
+                h, w = batch['image_instance_mask_1'].shape[-2:]
                 for downsample_factor in [2, 4]:
                     size = h // downsample_factor, w // downsample_factor
                     previous_label_factor = downsample_factor // 2
-                    batch[f'semantic_image_{downsample_factor}'] = functional_resize(
-                        batch[f'semantic_image_{previous_label_factor}'],
-                        size,
-                        mode=tvf.InterpolationMode.NEAREST,
-                    )
                     batch[f'image_instance_mask_{downsample_factor}'] = functional_resize(
                         batch[f'image_instance_mask_{previous_label_factor}'],
                         size,
                         mode=tvf.InterpolationMode.NEAREST,
                     )
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            batch['semantic_image_label_1'] = batch['semantic_image']
+            h, w = batch['semantic_image_label_1'].shape[-2:]
+            for downsample_factor in [2, 4]:
+                size = h // downsample_factor, w // downsample_factor
+                previous_label_factor = downsample_factor // 2
+                batch[f'semantic_image_label_{downsample_factor}'] = functional_resize(
+                    batch[f'semantic_image_label_{previous_label_factor}'],
+                    size,
+                    mode=tvf.InterpolationMode.NEAREST,
+                )
+
+        if self.cfg.DEPTH.ENABLED:
+            batch['depth_label_1'] = batch['depth']
+            h, w = batch['depth_label_1'].shape[-2:]
+            for downsample_factor in [2, 4]:
+                size = h // downsample_factor, w // downsample_factor
+                previous_label_factor = downsample_factor // 2
+                batch[f'depth_label_{downsample_factor}'] = functional_resize(
+                    batch[f'depth_label_{previous_label_factor}'],
+                    size,
+                    mode=tvf.InterpolationMode.BILINEAR,
+                )
 
         if self.cfg.LIDAR_RE.ENABLED:
             batch['range_view_label_1'] = batch['range_view_pcd_xyzd'].float() / 100.0
@@ -214,6 +232,8 @@ def functional_crop(batch: Dict[str, torch.Tensor], crop: Tuple[int, int, int, i
         batch['image'] = tvf.crop(batch['image'], top, left, height, width)
     if 'depth' in batch:
         batch['depth'] = tvf.crop(batch['depth'], top, left, height, width)
+    if 'depth_color' in batch:
+        batch['depth_color'] = tvf.crop(batch['depth'], top, left, height, width)
     if 'semseg' in batch:
         batch['semseg'] = tvf.crop(batch['semseg'], top, left, height, width)
     if 'semantic_image' in batch:

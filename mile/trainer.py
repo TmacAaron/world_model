@@ -83,6 +83,17 @@ class WorldModelTrainer(pl.LightningModule):
                 is_bev=False,
             )
 
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            self.sem_image_loss = SegmentationLoss(
+                use_top_k=self.cfg.SEMANTIC_IMAGE.USE_TOP_K,
+                top_k_ratio=self.cfg.SEMANTIC_IMAGE.TOP_K_RATIO,
+                use_weights=self.cfg.SEMANTIC_IMAGE.USE_WEIGHTS,
+                is_bev=False,
+            )
+
+        if self.cfg.DEPTH.ENABLED:
+            self.depth_image_loss = SpatialRegressionLoss(norm=1)
+
         if self.cfg.VOXEL_SEG.ENABLED:
             self.voxel_loss = VoxelLoss(
                 use_top_k=self.cfg.VOXEL_SEG.USE_TOP_K,
@@ -103,7 +114,7 @@ class WorldModelTrainer(pl.LightningModule):
                 checkpoint = torch.load(self.cfg.PRETRAINED.PATH, map_location='cpu')['state_dict']
                 checkpoint = {key[6:]: value for key, value in checkpoint.items() if key[:5] == 'model'}
 
-                self.model.load_state_dict(checkpoint, strict=True)
+                self.model.load_state_dict(checkpoint, strict=False)
                 print(f'Loaded weights from: {self.cfg.PRETRAINED.PATH}')
             else:
                 raise FileExistsError(self.cfg.PRETRAINED.PATH)
@@ -206,6 +217,26 @@ class WorldModelTrainer(pl.LightningModule):
                 )
                 losses[f'lidar_seg_{downsampling_factor}'] = \
                     lidar_seg_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_SEG
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            for downsampling_factor in [1, 2, 4]:
+                discount = 1 / downsampling_factor
+                sem_image_loss = self.sem_image_loss(
+                    prediction=output[f'semantic_image_{downsampling_factor}'],
+                    target=batch[f'semantic_image_label_{downsampling_factor}']
+                )
+                losses[f'semantic_image_{downsampling_factor}'] = \
+                    sem_image_loss * discount * self.cfg.LOSSES.WEIGHT_SEM_IMAGE
+
+        if self.cfg.DEPTH.ENABLED:
+            for downsampling_factor in [1, 2, 4]:
+                discount = 1 / downsampling_factor
+                depth_image_loss = self.depth_image_loss(
+                    prediction=output[f'depth_{downsampling_factor}'],
+                    target=batch[f'depth_label_{downsampling_factor}']
+                )
+                losses[f'depth_{downsampling_factor}'] = \
+                    depth_image_loss * discount * self.cfg.LOSSES.WEIGHT_DEPTH
 
         if self.cfg.VOXEL_SEG.ENABLED:
             for downsampling_factor in [1, 2, 4]:
@@ -413,6 +444,29 @@ class WorldModelTrainer(pl.LightningModule):
             visualisation_lidar_seg = torch.cat([lidar_seg_pred, lidar_seg_target], dim=-2).detach()
             name_ = f'{name}_lidar_seg'
             self.logger.experiment.add_video(name_, visualisation_lidar_seg, global_step=self.global_step, fps=2)
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            sem_target = batch['semantic_image_label_1'][:, :, 0]
+            sem_pred = torch.argmax(output['semantic_image_1'].detach(), dim=-3)
+
+            colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=lidar_seg_pred.device)
+            sem_target = colours[sem_target]
+            sem_pred = colours[sem_pred]
+
+            sem_target = sem_target.permute(0, 1, 4, 2, 3)
+            sem_pred = sem_pred.permute(0, 1, 4, 2, 3)
+
+            visualisation_sem_image = torch.cat([sem_pred, sem_target], dim=-2).detach()
+            name_ = f'{name}_sem_image'
+            self.logger.experiment.add_video(name_, visualisation_sem_image, global_step=self.global_step, fps=2)
+
+        if self.cfg.DEPTH.ENABLED:
+            depth_target = batch['depth_label_1']
+            depth_pred = output['depth_1'].detach()
+
+            visualisation_depth = torch.cat([depth_pred, depth_target], dim=-2).detach()
+            name_ = f'{name}_depth'
+            self.logger.experiment.add_video(name_, visualisation_depth, global_step=self.global_step, fps=2)
 
         if self.cfg.VOXEL_SEG.ENABLED:
             voxel_target = batch['voxel_label_1'][0, 0, 0].cpu().numpy()

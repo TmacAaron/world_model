@@ -13,7 +13,7 @@ from mile.config import get_parser, get_cfg
 from mile.data.dataset import DataModule
 from mile.trainer import WorldModelTrainer
 
-from clearml import Task, Dataset
+from clearml import Task, Dataset, Model
 
 
 class SaveGitDiffHashCallback(pl.Callback):
@@ -62,7 +62,9 @@ def main():
 
     # data = DataModule(cfg, dataset_root=dataset_root)
     data = DataModule(cfg)
-    model = WorldModelTrainer(cfg.convert_to_dict())
+
+    input_model = Model(model_id='').get_local_copy() if cfg.PRETRAINED.CML_MODEL else None
+    model = WorldModelTrainer(cfg.convert_to_dict(), pretrained_path=input_model)
     model.get_cml_logger(cml_logger)
 
     save_dir = os.path.join(
