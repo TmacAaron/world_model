@@ -27,18 +27,24 @@ class DataModule(pl.LightningDataModule):
 
         # Will be populated with self.setup()
         self.train_dataset, self.val_dataset = None, None
+        self.predict_dataset = None
 
     def setup(self, stage=None):
         self.train_dataset = CarlaDataset(
             self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
         self.val_dataset = CarlaDataset(
             self.cfg, mode='val', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
+        self.predict_dataset = CarlaDataset(
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root,
+            towns='Town01', runs='0000')
 
         print(f'{len(self.train_dataset)} data points in {self.train_dataset.dataset_path}')
         print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
+        print(f'{len(self.predict_dataset)} data points in prediction')
 
         self.train_sampler = None
         self.val_sampler = None
+        self.predict_sampler = None
 
     def train_dataloader(self):
         return DataLoader(
@@ -62,9 +68,20 @@ class DataModule(pl.LightningDataModule):
             sampler=self.val_sampler,
         )
 
+    def predict_dataloader(self):
+        return DataLoader(
+            self.predict_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.cfg.N_WORKERS,
+            pin_memory=True,
+            drop_last=True,
+            sampler=self.predict_sampler,
+        )
+
 
 class CarlaDataset(Dataset):
-    def __init__(self, cfg, mode='train', sequence_length=1, dataset_root=None):
+    def __init__(self, cfg, mode='train', sequence_length=1, dataset_root=None, towns='*', runs='*'):
         self.cfg = cfg
         self.mode = mode
         self.sequence_length = sequence_length
@@ -83,11 +100,11 @@ class CarlaDataset(Dataset):
 
         self.data = dict()
 
-        towns = sorted(glob(os.path.join(self.dataset_path, '*')))
+        towns = sorted(glob(os.path.join(self.dataset_path, towns)))
         for town_path in towns:
             town = os.path.basename(town_path)
 
-            runs = sorted(glob(os.path.join(self.dataset_path, town, '*')))
+            runs = sorted(glob(os.path.join(self.dataset_path, town, runs)))
             for run_path in runs:
                 run = os.path.basename(run_path)
                 pd_dataframe_path = os.path.join(run_path, 'pd_dataframe.pkl')

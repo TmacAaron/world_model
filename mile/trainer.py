@@ -1,7 +1,9 @@
 import os
 
 import numpy as np
+import cv2
 import torch
+import torch.nn.functional as F
 import lightning.pytorch as pl
 from torchmetrics import JaccardIndex
 
@@ -524,3 +526,95 @@ class WorldModelTrainer(pl.LightningModule):
             )
 
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
+
+    def predict_step(self, batch, batch_idx, predict_action=False):
+        batch = self.preprocess(batch)
+        output_observe, output_imagine = self.model.observe_and_imagine(batch, predict_action=predict_action)
+
+        # target = batch['birdview_label'][:, :, 0]
+        # pred_observe = torch.argmax(output_observe['bev_segmentation_1'].detach(), dim=-3)
+        # pred_imagine = torch.argmax(output_imagine['bev_segmentation_1'].detach(), dim=-3)
+        #
+        # colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred_observe.device)
+        #
+        # target = colours[target]
+        # pred_observe = colours[pred_observe]
+        # pred_imagine = colours[pred_imagine]
+        #
+        # # Move channel to third position
+        # target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0)
+        # pred_observe = F.pad(pred_observe.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0)
+        # pred_imagine = pred_imagine.permute(0, 1, 4, 2, 3)
+        #
+        # visualisation_video = torch.cat([target, pred], dim=-1).detach()
+        #
+        # # Rotate for visualisation
+        # visualisation_video = torch.rot90(visualisation_video, k=1, dims=[3, 4])
+        #
+        # name = f'bev'
+        # self.logger.experiment.add_video(name, visualisation_video, global_step=self.global_step, fps=2)
+
+        if self.cfg.EVAL.RGB_SUPERVISION and batch_idx % 10 == 0:
+            rgb_target = batch['rgb_label_1']
+            rgb_pred_observe = output_observe['rgb_1'].detach()
+            rgb_pred_imagine = output_imagine['rgb_1'].detach()
+            rgb_pred = torch.cat([rgb_pred_observe, rgb_pred_imagine], dim=1)
+
+            b, _, c, h, w = rgb_target.size()
+            s = self.cfg.RECEPTIVE_FIELD
+            f = self.cfg.FUTURE_HORIZON
+
+            rgb_target = F.pad(rgb_target, [5, 5, 5, 5], 'constant', 0.8)
+            rgb_pred = F.pad(rgb_pred, [5, 5, 5, 5], 'constant', 0.8)
+
+            acc = batch['throttle_brake']
+            steer = batch['steering']
+
+            # acc_bar = torch.ones(b, s+f, c, int(h/4), w+10, device=rgb_pred.device)
+            # steer_bar = torch.ones(b, s+f, c, int(h/4), w+10, device=rgb_pred.device)
+            #
+            # red = torch.tensor([200, 0, 0], device=rgb_pred.device)[:, None, None] / 255.0
+            # green = torch.tensor([0, 200, 0], device=rgb_pred.device)[:, None, None] / 255.0
+            # blue = torch.tensor([0, 0, 200], device=rgb_pred.device)[:, None, None] / 255.0
+
+            acc_bar = np.ones((b, s+f, int(h/4), w+10, c)).astype(np.uint8) * 255
+            steer_bar = np.ones((b, s+f, int(h/4), w+10, c)).astype(np.uint8) * 255
+
+            red = np.array([200, 0, 0])[None, None]
+            green = np.array([0, 200, 0])[None, None]
+            blue = np.array([0, 0, 200])[None, None]
+            mid = int(w / 2) + 5
+
+            for b_idx in range(b):
+                for step in range(s+f):
+                    if acc[b_idx, step] >= 0:
+                        acc_bar[b_idx, step, 5: -5, mid: mid + int(w / 2 * acc[b_idx, step]), :] = green
+                        cv2.putText(acc_bar[b_idx, step], f'{acc[b_idx, step, 0]:.5f}', (mid - 220, int(h / 8) + 15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+                    else:
+                        acc_bar[b_idx, step, 5: -5, mid + int(w / 2 * acc[b_idx, step]): mid, :] = red
+                        cv2.putText(acc_bar[b_idx, step], f'{acc[b_idx, step, 0]:.5f}', (mid + 10, int(h/8)+15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+                    if steer[b_idx, step] >= 0:
+                        steer_bar[b_idx, step, 5: -5, mid: mid + int(w / 2 * steer[b_idx, step]), :] = blue
+                        cv2.putText(steer_bar[b_idx, step], f'{steer[b_idx, step, 0]:.5f}', (mid - 220, int(h / 8) + 15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+                    else:
+                        steer_bar[b_idx, step, 5: -5, mid + int(w / 2 * steer[b_idx, step]): mid, :] = blue
+                        cv2.putText(steer_bar[b_idx, step], f'{steer[b_idx, step, 0]:.5f}', (mid + 10, int(h / 8) + 15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+            acc_bar = torch.tensor(acc_bar.transpose((0, 1, 4, 2, 3)),
+                                   dtype=torch.float, device=rgb_pred.device) / 255.0
+            steer_bar = torch.tensor(steer_bar.transpose((0, 1, 4, 2, 3)),
+                                     dtype=torch.float, device=rgb_pred.device) / 255.0
+
+            rgb = torch.cat([acc_bar, steer_bar, rgb_target, rgb_pred], dim=-2)
+            visualisation_rgb = []
+            for step in range(s+f):
+                if step == s:
+                    visualisation_rgb.append(torch.ones(b, c, rgb.size(-2), int(w/4), device=rgb_pred.device))
+                visualisation_rgb.append(rgb[:, step, ...])
+            visualisation_rgb = torch.cat(visualisation_rgb, dim=-1).detach()
+
+            name = f'rgb'
+            self.logger.experiment.add_images(name, visualisation_rgb, global_step=batch_idx)

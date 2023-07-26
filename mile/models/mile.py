@@ -473,14 +473,16 @@ class Mile(nn.Module):
         if future_horizon is None:
             future_horizon = self.cfg.FUTURE_HORIZON
 
-        b, s = batch['image'].shape[:2]
+        # b, s = batch['image'].shape[:2]
+        b = batch['image'].shape[0]
+        s = self.cfg.RECEPTIVE_FIELD
 
         if not predict_action:
             assert batch['throttle_brake'].shape[1] == s + future_horizon
             assert batch['steering'].shape[1] == s + future_horizon
 
         # Observe past context
-        output_observe = self.forward(batch)
+        output_observe = self.forward({key: value[:, :s] for key, value in batch.items()})
 
         # Imagine future states
         output_imagine = {
@@ -509,9 +511,46 @@ class Mile(nn.Module):
         for k, v in output_imagine.items():
             output_imagine[k] = torch.stack(v, dim=1)
 
-        bev_decoder_output = self.bev_decoder(pack_sequence_dim(output_imagine['state']))
-        bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, future_horizon)
-        output_imagine = {**output_imagine, **bev_decoder_output}
+        state = pack_sequence_dim(output_imagine['state'])
+
+        if self.cfg.SEMANTIC_SEG.ENABLED:
+            bev_decoder_output = self.bev_decoder(pack_sequence_dim(output_imagine['state']))
+            bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, future_horizon)
+            output_imagine = {**output_imagine, **bev_decoder_output}
+        
+        if self.cfg.EVAL.RGB_SUPERVISION:
+            rgb_decoder_output = self.rgb_decoder(state)
+            rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, future_horizon)
+            output_imagine = {**output_imagine, **rgb_decoder_output}
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            lidar_output = self.lidar_re(state)
+            lidar_output = unpack_sequence_dim(lidar_output, b, future_horizon)
+            output_imagine = {**output_imagine, **lidar_output}
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            lidar_seg_output = self.lidar_segmentation(state)
+            lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, future_horizon)
+            output_imagine = {**output_imagine, **lidar_seg_output}
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            sem_image_output = self.sem_image_decoder(state)
+            sem_image_output = unpack_sequence_dim(sem_image_output, b, future_horizon)
+            output_imagine = {**output_imagine, **sem_image_output}
+
+        if self.cfg.DEPTH.ENABLED:
+            depth_image_output = self.depth_image_decoder(state)
+            depth_image_output = unpack_sequence_dim(depth_image_output, b, future_horizon)
+            output_imagine = {**output_imagine, **depth_image_output}
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            # voxel_feature_xy = self.voxel_feature_xy_decoder(state)
+            # voxel_feature_xz = self.voxel_feature_xz_decoder(state)
+            # voxel_feature_yz = self.voxel_feature_yz_decoder(state)
+            # voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
+            voxel_decoder_output = self.voxel_decoder(state)
+            voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, future_horizon)
+            output_imagine = {**output_imagine, **voxel_decoder_output}
 
         return output_observe, output_imagine
 
