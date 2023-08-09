@@ -268,13 +268,13 @@ _C.LOSSES.WEIGHT_LIDAR_SEG = 0.1
 _C.LOSSES.WEIGHT_SEM_IMAGE = 0.1
 _C.LOSSES.WEIGHT_DEPTH = 0.1
 _C.LOSSES.WEIGHT_VOXEL = 0.1
-_C.LOSSES.RGB_INSTANCE = True
-_C.LOSSES.SSIM = True
+_C.LOSSES.RGB_INSTANCE = False
+_C.LOSSES.SSIM = False
 
 # pre_trained ckpt path
 _C.PRETRAINED = CN()
 _C.PRETRAINED.PATH = ''
-_C.PRETRAINED.CML_MODEL = False
+_C.PRETRAINED.CML_MODEL = ''
 
 # There parameters are only used to benchmark other models.
 _C.EVAL = CN()

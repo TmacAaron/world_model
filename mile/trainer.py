@@ -528,41 +528,56 @@ class WorldModelTrainer(pl.LightningModule):
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
     def predict_step(self, batch, batch_idx, predict_action=False):
-        batch = self.preprocess(batch)
-        output_observe, output_imagine = self.model.observe_and_imagine(batch, predict_action=predict_action)
+        # batch = self.preprocess(batch)
+        # output_observe, output_imagine = self.model.observe_and_imagine(batch, predict_action=predict_action)
 
-        # target = batch['birdview_label'][:, :, 0]
-        # pred_observe = torch.argmax(output_observe['bev_segmentation_1'].detach(), dim=-3)
-        # pred_imagine = torch.argmax(output_imagine['bev_segmentation_1'].detach(), dim=-3)
-        #
-        # colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred_observe.device)
-        #
-        # target = colours[target]
-        # pred_observe = colours[pred_observe]
-        # pred_imagine = colours[pred_imagine]
-        #
-        # # Move channel to third position
-        # target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0)
-        # pred_observe = F.pad(pred_observe.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0)
-        # pred_imagine = pred_imagine.permute(0, 1, 4, 2, 3)
-        #
-        # visualisation_video = torch.cat([target, pred], dim=-1).detach()
-        #
-        # # Rotate for visualisation
-        # visualisation_video = torch.rot90(visualisation_video, k=1, dims=[3, 4])
-        #
-        # name = f'bev'
-        # self.logger.experiment.add_video(name, visualisation_video, global_step=self.global_step, fps=2)
+        s = self.cfg.RECEPTIVE_FIELD
+        f = self.cfg.FUTURE_HORIZON
+        _, output = self.shared_step(batch)
+        output_observe = {}
+        output_imagine = {}
+        for key, value in output.items():
+            output_observe[key] = value[:, :s] if isinstance(value, torch.Tensor) else None
+            output_imagine[key] = value[:, s:] if isinstance(value, torch.Tensor) else None
 
-        if self.cfg.EVAL.RGB_SUPERVISION and batch_idx % 10 == 0:
+        target = batch['birdview_label'][:, :, 0]
+        pred_observe = torch.argmax(output_observe['bev_segmentation_1'].detach(), dim=-3)
+        pred_imagine = torch.argmax(output_imagine['bev_segmentation_1'].detach(), dim=-3)
+        pred = torch.cat([pred_observe, pred_imagine], dim=1).detach()
+
+        colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred_observe.device) / 255.0
+
+        target = colours[target]
+        pred = colours[pred]
+
+        # Move channel to third position
+        target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
+        pred = F.pad(pred.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
+
+        bev = torch.cat([pred, target], dim=-1).detach()
+
+        # Rotate for visualisation
+        bev = torch.rot90(bev, k=1, dims=[3, 4])
+
+        b, _, c, h, w = bev.size()
+
+        visualization_bev = []
+        for step in range(s+f):
+            if step == s:
+                visualization_bev.append(torch.ones(b, c, h, int(w/4), device=pred.device))
+            visualization_bev.append(bev[:, step])
+        visualization_bev = torch.cat(visualization_bev, dim=-1).detach()
+
+        name = f'bev'
+        self.logger.experiment.add_images(name, visualization_bev, global_step=batch_idx)
+
+        if self.cfg.EVAL.RGB_SUPERVISION:
             rgb_target = batch['rgb_label_1']
             rgb_pred_observe = output_observe['rgb_1'].detach()
             rgb_pred_imagine = output_imagine['rgb_1'].detach()
             rgb_pred = torch.cat([rgb_pred_observe, rgb_pred_imagine], dim=1)
 
             b, _, c, h, w = rgb_target.size()
-            s = self.cfg.RECEPTIVE_FIELD
-            f = self.cfg.FUTURE_HORIZON
 
             rgb_target = F.pad(rgb_target, [5, 5, 5, 5], 'constant', 0.8)
             rgb_pred = F.pad(rgb_pred, [5, 5, 5, 5], 'constant', 0.8)

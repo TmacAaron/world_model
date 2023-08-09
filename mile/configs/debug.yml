@@ -37,13 +37,16 @@ LOSSES:
   SSIM: False
 
 MODEL:
-  EMBEDDING_DIM: 64
+  EMBEDDING_DIM: 512
 
 EVAL:
   RGB_SUPERVISION: True
 
-#PRETRAINED:
-#  PATH: 'weights/epoch=37-step=57600.ckpt'
+RECEPTIVE_FIELD: 4
+FUTURE_HORIZON: 0
+
+PRETRAINED:
+  PATH: 'weights/epoch=37-step=57600.ckpt'
 #
 #DATASET:
 #  DATAROOT: ''

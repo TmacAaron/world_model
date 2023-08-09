@@ -35,16 +35,15 @@ class DataModule(pl.LightningDataModule):
         self.val_dataset = CarlaDataset(
             self.cfg, mode='val', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
         self.predict_dataset = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root,
-            towns='Town01', runs='0000')
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
 
         print(f'{len(self.train_dataset)} data points in {self.train_dataset.dataset_path}')
         print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
         print(f'{len(self.predict_dataset)} data points in prediction')
 
-        self.train_sampler = None
+        self.train_sampler = range(0, len(self.predict_dataset), 1)
         self.val_sampler = None
-        self.predict_sampler = None
+        self.predict_sampler = range(0, len(self.predict_dataset), 50)
 
     def train_dataloader(self):
         return DataLoader(
@@ -81,7 +80,7 @@ class DataModule(pl.LightningDataModule):
 
 
 class CarlaDataset(Dataset):
-    def __init__(self, cfg, mode='train', sequence_length=1, dataset_root=None, towns='*', runs='*'):
+    def __init__(self, cfg, mode='train', sequence_length=1, dataset_root=None, towns_filter='*', runs_filter='*'):
         self.cfg = cfg
         self.mode = mode
         self.sequence_length = sequence_length
@@ -100,11 +99,11 @@ class CarlaDataset(Dataset):
 
         self.data = dict()
 
-        towns = sorted(glob(os.path.join(self.dataset_path, towns)))
+        towns = sorted(glob(os.path.join(self.dataset_path, towns_filter)))
         for town_path in towns:
             town = os.path.basename(town_path)
 
-            runs = sorted(glob(os.path.join(self.dataset_path, town, runs)))
+            runs = sorted(glob(os.path.join(self.dataset_path, town, runs_filter)))
             for run_path in runs:
                 run = os.path.basename(run_path)
                 pd_dataframe_path = os.path.join(run_path, 'pd_dataframe.pkl')
@@ -234,7 +233,7 @@ class CarlaDataset(Dataset):
         # single_element_t['points_histogram_yz'] = lidar_to_histogram_features(points, self.cfg)
 
         range_view_pcd_depth, range_view_pcd_xyz, range_view_pcd_sem = self.pcd.do_range_projection(points, semantics)
-        if self.cfg.LIDAR_RE.ENABLED:
+        if self.cfg.MODEL.LIDAR.ENABLED:
             single_element_t['range_view_pcd_xyzd'] = np.concatenate(
                 [range_view_pcd_xyz, range_view_pcd_depth[..., None]], axis=-1).transpose((2, 0, 1))  # x y z d
         if self.cfg.LIDAR_SEG.ENABLED:
