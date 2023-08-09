@@ -32,6 +32,7 @@ class WorldModelTrainer(pl.LightningModule):
             self.cfg.PRETRAINED.PATH = pretrained_path
         # print(self.cfg)
         self.vis_step = -1
+        self.rf = self.cfg.RECEPTIVE_FIELD
 
         self.cml_logger = None
         self.preprocess = PreProcess(self.cfg)
@@ -132,14 +133,15 @@ class WorldModelTrainer(pl.LightningModule):
         return output
 
     def shared_step(self, batch):
-        output = self.forward(batch)
+        output, output_imagine = self.forward(batch)
+        rf = self.rf
 
         losses = dict()
 
         action_weight = self.cfg.LOSSES.WEIGHT_ACTION
         losses['throttle_brake'] = action_weight * self.action_loss(output['throttle_brake'],
-                                                                    batch['throttle_brake'])
-        losses['steering'] = action_weight * self.action_loss(output['steering'], batch['steering'])
+                                                                    batch['throttle_brake'][:, :rf])
+        losses['steering'] = action_weight * self.action_loss(output['steering'], batch['steering'][:, :rf])
 
         if self.cfg.MODEL.TRANSITION.ENABLED:
             probabilistic_loss = self.probabilistic_loss(output['prior'], output['posterior'])
@@ -150,7 +152,7 @@ class WorldModelTrainer(pl.LightningModule):
             for downsampling_factor in [1, 2, 4]:
                 bev_segmentation_loss = self.segmentation_loss(
                     prediction=output[f'bev_segmentation_{downsampling_factor}'],
-                    target=batch[f'birdview_label_{downsampling_factor}'],
+                    target=batch[f'birdview_label_{downsampling_factor}'][:, :rf],
                 )
                 discount = 1/downsampling_factor
                 losses[f'bev_segmentation_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_SEGMENTATION * \
@@ -158,11 +160,11 @@ class WorldModelTrainer(pl.LightningModule):
 
                 center_loss = self.center_loss(
                     prediction=output[f'bev_instance_center_{downsampling_factor}'],
-                    target=batch[f'center_label_{downsampling_factor}']
+                    target=batch[f'center_label_{downsampling_factor}'][:, :rf]
                 )
                 offset_loss = self.offset_loss(
                     prediction=output[f'bev_instance_offset_{downsampling_factor}'],
-                    target=batch[f'offset_label_{downsampling_factor}']
+                    target=batch[f'offset_label_{downsampling_factor}'][:, :rf]
                 )
 
                 center_loss = self.cfg.INSTANCE_SEG.CENTER_LOSS_WEIGHT * center_loss
@@ -178,14 +180,14 @@ class WorldModelTrainer(pl.LightningModule):
                 discount = 1 / downsampling_factor
                 rgb_loss = self.rgb_loss(
                     prediction=output[f'rgb_{downsampling_factor}'],
-                    target=batch[f'rgb_label_{downsampling_factor}'],
+                    target=batch[f'rgb_label_{downsampling_factor}'][:, :rf],
                 )
 
                 if self.cfg.LOSSES.RGB_INSTANCE:
                     rgb_instance_loss = self.rgb_instance_loss(
                         prediction=output[f'rgb_{downsampling_factor}'],
-                        target=batch[f'rgb_label_{downsampling_factor}'],
-                        instance_mask=batch[f'image_instance_mask_{downsampling_factor}']
+                        target=batch[f'rgb_label_{downsampling_factor}'][:, :rf],
+                        instance_mask=batch[f'image_instance_mask_{downsampling_factor}'][:, :rf]
                     )
                 else:
                     rgb_instance_loss = 0
@@ -193,7 +195,7 @@ class WorldModelTrainer(pl.LightningModule):
                 if self.cfg.LOSSES.SSIM:
                     ssim_loss = 1 - self.ssim_loss(
                         prediction=output[f'rgb_{downsampling_factor}'],
-                        target=batch[f'rgb_label_{downsampling_factor}'],
+                        target=batch[f'rgb_label_{downsampling_factor}'][:, :rf],
                     )
                     ssim_weight = 0.6
                     losses[f'ssim_{downsampling_factor}'] = rgb_weight * discount * ssim_loss * ssim_weight
@@ -206,7 +208,7 @@ class WorldModelTrainer(pl.LightningModule):
                 discount = 1 / downsampling_factor
                 lidar_re_loss = self.lidar_re_loss(
                     prediction=output[f'lidar_reconstruction_{downsampling_factor}'],
-                    target=batch[f'range_view_label_{downsampling_factor}']
+                    target=batch[f'range_view_label_{downsampling_factor}'][:, :rf]
                 )
                 losses[f'lidar_re_{downsampling_factor}'] = lidar_re_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_RE
 
@@ -215,7 +217,7 @@ class WorldModelTrainer(pl.LightningModule):
                 discount = 1 / downsampling_factor
                 lidar_seg_loss = self.lidar_seg_loss(
                     prediction=output[f'lidar_segmentation_{downsampling_factor}'],
-                    target=batch[f'range_view_seg_label_{downsampling_factor}']
+                    target=batch[f'range_view_seg_label_{downsampling_factor}'][:, :rf]
                 )
                 losses[f'lidar_seg_{downsampling_factor}'] = \
                     lidar_seg_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_SEG
@@ -225,7 +227,7 @@ class WorldModelTrainer(pl.LightningModule):
                 discount = 1 / downsampling_factor
                 sem_image_loss = self.sem_image_loss(
                     prediction=output[f'semantic_image_{downsampling_factor}'],
-                    target=batch[f'semantic_image_label_{downsampling_factor}']
+                    target=batch[f'semantic_image_label_{downsampling_factor}'][:, :rf]
                 )
                 losses[f'semantic_image_{downsampling_factor}'] = \
                     sem_image_loss * discount * self.cfg.LOSSES.WEIGHT_SEM_IMAGE
@@ -235,7 +237,7 @@ class WorldModelTrainer(pl.LightningModule):
                 discount = 1 / downsampling_factor
                 depth_image_loss = self.depth_image_loss(
                     prediction=output[f'depth_{downsampling_factor}'],
-                    target=batch[f'depth_label_{downsampling_factor}']
+                    target=batch[f'depth_label_{downsampling_factor}'][:, :rf]
                 )
                 losses[f'depth_{downsampling_factor}'] = \
                     depth_image_loss * discount * self.cfg.LOSSES.WEIGHT_DEPTH
@@ -245,28 +247,28 @@ class WorldModelTrainer(pl.LightningModule):
                 discount = 1 / downsampling_factor
                 voxel_loss = self.voxel_loss(
                     prediction=output[f'voxel_{downsampling_factor}'],
-                    target=batch[f'voxel_label_{downsampling_factor}'].type(torch.long)
+                    target=batch[f'voxel_label_{downsampling_factor}'][:, :rf].type(torch.long)
                 )
                 sem_scal_loss = self.sem_scal_loss(
                     prediction=output[f'voxel_{downsampling_factor}'],
-                    target=batch[f'voxel_label_{downsampling_factor}']
+                    target=batch[f'voxel_label_{downsampling_factor}'][:, :rf]
                 )
                 geo_scal_loss = self.geo_scal_loss(
                     prediction=output[f'voxel_{downsampling_factor}'],
-                    target=batch[f'voxel_label_{downsampling_factor}']
+                    target=batch[f'voxel_label_{downsampling_factor}'][:, :rf]
                 )
                 losses[f'voxel_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * voxel_loss
                 losses[f'sem_scal_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * sem_scal_loss
                 losses[f'geo_scal_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * geo_scal_loss
 
         if self.cfg.MODEL.REWARD.ENABLED:
-            reward_loss = self.action_loss(output['reward'], batch['reward'])
+            reward_loss = self.action_loss(output['reward'], batch['reward'][:, :rf])
             losses['reward'] = self.cfg.LOSSES.WEIGHT_REWARD * reward_loss
 
-        return losses, output
+        return losses, output, output_imagine
 
     def compute_ssc_metrics(self, batch, output, metric):
-        y_true = batch['voxel_label_1'].cpu().numpy()
+        y_true = batch['voxel_label_1'][:, :self.rf].cpu().numpy()
         y_pred = output['voxel_1'].detach().cpu().numpy()
         b, s, c, x, y, z = y_pred.shape
         y_pred = y_pred.reshape(b * s, c, x, y, z)
@@ -280,34 +282,34 @@ class WorldModelTrainer(pl.LightningModule):
             print('ACTIVE INFERENCE ACTIVATED')
             print('!'*50)
             self.model.rssm.active_inference = True
-        losses, output = self.shared_step(batch)
+        losses, output, output_imagine = self.shared_step(batch)
 
         if self.cfg.VOXEL_SEG.ENABLED:
             self.compute_ssc_metrics(batch, output, self.train_metrics)
 
-        self.logging_and_visualisation(batch, output, losses, batch_idx, prefix='train')
+        self.logging_and_visualisation(batch, output, output_imagine, losses, batch_idx, prefix='train')
 
         return self.loss_reducing(losses)
 
     def validation_step(self, batch, batch_idx):
-        loss, output = self.shared_step(batch)
+        loss, output, output_imagine = self.shared_step(batch)
 
         if self.cfg.SEMANTIC_SEG.ENABLED:
             seg_prediction = output['bev_segmentation_1'].detach()
             seg_prediction = torch.argmax(seg_prediction, dim=2)
             self.metric_iou_val(
                 seg_prediction.view(-1),
-                batch['birdview_label'].view(-1)
+                batch['birdview_label'][:, :self.rf].view(-1)
             )
 
         if self.cfg.VOXEL_SEG.ENABLED:
             self.compute_ssc_metrics(batch, output, self.val_metrics)
 
-        self.logging_and_visualisation(batch, output, loss, batch_idx, prefix='val')
+        self.logging_and_visualisation(batch, output, output_imagine, loss, batch_idx, prefix='val')
 
         return {'val_loss': self.loss_reducing(loss)}
 
-    def logging_and_visualisation(self, batch, output, loss, batch_idx, prefix='train'):
+    def logging_and_visualisation(self, batch, output, output_imagine, loss, batch_idx, prefix='train'):
         # Logging
         self.log('-global_step', torch.tensor(-self.global_step, dtype=torch.float32))
         for key, value in loss.items():
@@ -316,7 +318,7 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.EVAL.RGB_SUPERVISION:
             ssim_value = self.ssim_metric(
                 prediction=output[f'rgb_1'].detach(),
-                target=batch[f'rgb_label_1'],
+                target=batch[f'rgb_label_1'][:, :self.rf],
             )
             self.log(f'{prefix}_ssim', ssim_value)
 
@@ -328,7 +330,7 @@ class WorldModelTrainer(pl.LightningModule):
         else:
             visualisation_criteria = batch_idx == 0
         if visualisation_criteria:
-            self.visualise(batch, output, batch_idx, prefix=prefix)
+            self.visualise(batch, output, output_imagine, batch_idx, prefix=prefix)
 
     def loss_reducing(self, loss):
         total_loss = sum([x for x in loss.values()])
@@ -360,39 +362,142 @@ class WorldModelTrainer(pl.LightningModule):
                 self.log(f'{prefix}_Voxel_Recall', stats["recall"])
                 metric.reset()
 
-    def visualise(self, batch, output, batch_idx, prefix='train'):
-        if not self.cfg.SEMANTIC_SEG.ENABLED:
-            return
-
-        target = batch['birdview_label'][:, :, 0]
-        pred = torch.argmax(output['bev_segmentation_1'].detach(), dim=-3)
-
-        colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred.device)
-
-        target = colours[target]
-        pred = colours[pred]
-
-        # Move channel to third position
-        target = target.permute(0, 1, 4, 2, 3)
-        pred = pred.permute(0, 1, 4, 2, 3)
-
-        visualisation_video = torch.cat([target, pred], dim=-1).detach()
-
-        # Rotate for visualisation
-        visualisation_video = torch.rot90(visualisation_video, k=1, dims=[3, 4])
+    def visualise(self, batch, output, output_imagine, batch_idx, prefix='train'):
+        s = self.cfg.RECEPTIVE_FIELD
+        f = self.cfg.FUTURE_HORIZON
 
         name = f'{prefix}_outputs'
         if prefix == 'val':
             name = name + f'_{batch_idx}'
-        self.logger.experiment.add_video(name, visualisation_video, global_step=self.global_step, fps=2)
+
+        if self.cfg.SEMANTIC_SEG.ENABLED:
+
+            # target = batch['birdview_label'][:, :, 0]
+            # pred = torch.argmax(output['bev_segmentation_1'].detach(), dim=-3)
+
+            # colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred.device)
+
+            # target = colours[target]
+            # pred = colours[pred]
+
+            # # Move channel to third position
+            # target = target.permute(0, 1, 4, 2, 3)
+            # pred = pred.permute(0, 1, 4, 2, 3)
+
+            # visualisation_video = torch.cat([target, pred], dim=-1).detach()
+
+            # # Rotate for visualisation
+            # visualisation_video = torch.rot90(visualisation_video, k=1, dims=[3, 4])
+
+            # name = f'{prefix}_outputs'
+            # if prefix == 'val':
+            #     name = name + f'_{batch_idx}'
+            # self.logger.experiment.add_video(name, visualisation_video, global_step=self.global_step, fps=2)
+
+            target = batch['birdview_label'][:, :, 0]
+            pred = torch.argmax(output['bev_segmentation_1'].detach(), dim=-3)
+            bev_imagines = []
+            for imagine in output_imagine:
+                bev_imagines.append(torch.argmax(imagine['bev_segmentation_1'].detach(), dim=-3))
+
+            colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred.device) / 255.0
+
+            target = colours[target]
+            # pred = colours[pred]
+
+            # Move channel to third position
+            target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
+            # pred = F.pad(pred.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
+            preds = []
+            for bev_imagine in bev_imagines:
+                p_i = torch.cat([pred, bev_imagine], dim=1)
+                p_i = colours[p_i]
+                p_i = F.pad(p_i.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
+                preds.append(p_i)
+
+            bev = torch.cat([*preds[::-1], target], dim=-1).detach()
+            bev = torch.rot90(bev, k=1, dims=[3, 4])
+
+            b, _, c, h, w = bev.size()
+
+            visualisation_bev = []
+            for step in range(s+f):
+                if step == s:
+                    visualisation_bev.append(torch.ones(b, c, h, int(w/4), device=pred.device))
+                visualisation_bev.append(bev[:, step])
+            visualisation_bev = torch.cat(visualisation_bev, dim=-1).detach()
+
+            name_ = f'{name}_bev'
+            self.logger.experiment.add_images(name_, visualisation_bev, global_step=self.global_step)
 
         if self.cfg.EVAL.RGB_SUPERVISION:
+            # rgb_target = batch['rgb_label_1']
+            # rgb_pred = output['rgb_1'].detach()
+
+            # visualisation_rgb = torch.cat([rgb_pred, rgb_target], dim=-2).detach()
+            # name_ = f'{name}_rgb'
+            # self.logger.experiment.add_video(name_, visualisation_rgb, global_step=self.global_step, fps=2)
+
             rgb_target = batch['rgb_label_1']
             rgb_pred = output['rgb_1'].detach()
+            rgb_imagines = []
+            for imagine in output_imagine:
+                rgb_imagines.append(imagine['rgb_1'].detach())
 
-            visualisation_rgb = torch.cat([rgb_pred, rgb_target], dim=-2).detach()
+            b, _, c, h, w = rgb_target.size()
+
+            rgb_preds = []
+            for rgb_imagine in rgb_imagines:
+                pred_imagine = torch.cat([rgb_pred, rgb_imagine], dim=1)
+                rgb_preds.append(F.pad(pred_imagine, [5, 5, 5, 5], 'constant', 0.8))
+
+            rgb_target = F.pad(rgb_target, [5, 5, 5, 5], 'constant', 0.8)
+            # rgb_pred = F.pad(rgb_pred, [5, 5, 5, 5], 'constant', 0.8)
+
+            acc = batch['throttle_brake']
+            steer = batch['steering']
+
+            acc_bar = np.ones((b, s+f, int(h/4), w+10, c)).astype(np.uint8) * 255
+            steer_bar = np.ones((b, s+f, int(h/4), w+10, c)).astype(np.uint8) * 255
+
+            red = np.array([200, 0, 0])[None, None]
+            green = np.array([0, 200, 0])[None, None]
+            blue = np.array([0, 0, 200])[None, None]
+            mid = int(w / 2) + 5
+
+            for b_idx in range(b):
+                for step in range(s+f):
+                    if acc[b_idx, step] >= 0:
+                        acc_bar[b_idx, step, 5: -5, mid: mid + int(w / 2 * acc[b_idx, step]), :] = green
+                        cv2.putText(acc_bar[b_idx, step], f'{acc[b_idx, step, 0]:.5f}', (mid - 220, int(h / 8) + 15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+                    else:
+                        acc_bar[b_idx, step, 5: -5, mid + int(w / 2 * acc[b_idx, step]): mid, :] = red
+                        cv2.putText(acc_bar[b_idx, step], f'{acc[b_idx, step, 0]:.5f}', (mid + 10, int(h/8)+15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+                    if steer[b_idx, step] >= 0:
+                        steer_bar[b_idx, step, 5: -5, mid: mid + int(w / 2 * steer[b_idx, step]), :] = blue
+                        cv2.putText(steer_bar[b_idx, step], f'{steer[b_idx, step, 0]:.5f}', (mid - 220, int(h / 8) + 15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+                    else:
+                        steer_bar[b_idx, step, 5: -5, mid + int(w / 2 * steer[b_idx, step]): mid, :] = blue
+                        cv2.putText(steer_bar[b_idx, step], f'{steer[b_idx, step, 0]:.5f}', (mid + 10, int(h / 8) + 15),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 0, 0), 2, cv2.LINE_AA)
+            acc_bar = torch.tensor(acc_bar.transpose((0, 1, 4, 2, 3)),
+                                   dtype=torch.float, device=rgb_pred.device) / 255.0
+            steer_bar = torch.tensor(steer_bar.transpose((0, 1, 4, 2, 3)),
+                                     dtype=torch.float, device=rgb_pred.device) / 255.0
+
+            rgb = torch.cat([acc_bar, steer_bar, rgb_target, *rgb_preds], dim=-2)
+            visualisation_rgb = []
+            for step in range(s+f):
+                if step == s:
+                    visualisation_rgb.append(torch.ones(b, c, rgb.size(-2), int(w/4), device=rgb_pred.device))
+                visualisation_rgb.append(rgb[:, step, ...])
+            visualisation_rgb = torch.cat(visualisation_rgb, dim=-1).detach()
+
             name_ = f'{name}_rgb'
-            self.logger.experiment.add_video(name_, visualisation_rgb, global_step=self.global_step, fps=2)
+            self.logger.experiment.add_images(name_, visualisation_rgb, global_step=self.global_step)
 
         if self.cfg.LIDAR_RE.ENABLED:
             lidar_target = batch['range_view_label_1']
@@ -528,48 +633,42 @@ class WorldModelTrainer(pl.LightningModule):
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
     def predict_step(self, batch, batch_idx, predict_action=False):
-        # batch = self.preprocess(batch)
-        # output_observe, output_imagine = self.model.observe_and_imagine(batch, predict_action=predict_action)
+        batch = self.preprocess(batch)
+        output_observe, output_imagine = self.model.observe_and_imagine(batch, predict_action=predict_action)
 
         s = self.cfg.RECEPTIVE_FIELD
         f = self.cfg.FUTURE_HORIZON
-        _, output = self.shared_step(batch)
-        output_observe = {}
-        output_imagine = {}
-        for key, value in output.items():
-            output_observe[key] = value[:, :s] if isinstance(value, torch.Tensor) else None
-            output_imagine[key] = value[:, s:] if isinstance(value, torch.Tensor) else None
 
-        target = batch['birdview_label'][:, :, 0]
-        pred_observe = torch.argmax(output_observe['bev_segmentation_1'].detach(), dim=-3)
-        pred_imagine = torch.argmax(output_imagine['bev_segmentation_1'].detach(), dim=-3)
-        pred = torch.cat([pred_observe, pred_imagine], dim=1).detach()
+        if self.cfg.SEMANTIC_SEG.ENABLED:
 
-        colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred_observe.device) / 255.0
+            target = batch['birdview_label'][:, :, 0]
+            pred_observe = torch.argmax(output_observe['bev_segmentation_1'].detach(), dim=-3)
+            pred_imagine = torch.argmax(output_imagine['bev_segmentation_1'].detach(), dim=-3)
+            pred = torch.cat([pred_observe, pred_imagine], dim=1).detach()
 
-        target = colours[target]
-        pred = colours[pred]
+            colours = torch.tensor(BIRDVIEW_COLOURS, dtype=torch.uint8, device=pred_observe.device) / 255.0
 
-        # Move channel to third position
-        target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
-        pred = F.pad(pred.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
+            target = colours[target]
+            pred = colours[pred]
 
-        bev = torch.cat([pred, target], dim=-1).detach()
+            # Move channel to third position
+            target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
+            pred = F.pad(pred.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
 
-        # Rotate for visualisation
-        bev = torch.rot90(bev, k=1, dims=[3, 4])
+            bev = torch.cat([pred, target], dim=-1).detach()
+            bev = torch.rot90(bev, k=1, dims=[3, 4])
 
-        b, _, c, h, w = bev.size()
+            b, _, c, h, w = bev.size()
 
-        visualization_bev = []
-        for step in range(s+f):
-            if step == s:
-                visualization_bev.append(torch.ones(b, c, h, int(w/4), device=pred.device))
-            visualization_bev.append(bev[:, step])
-        visualization_bev = torch.cat(visualization_bev, dim=-1).detach()
+            visualisation_bev = []
+            for step in range(s+f):
+                if step == s:
+                    visualisation_bev.append(torch.ones(b, c, h, int(w/4), device=pred.device))
+                visualisation_bev.append(bev[:, step])
+            visualisation_bev = torch.cat(visualisation_bev, dim=-1).detach()
 
-        name = f'bev'
-        self.logger.experiment.add_images(name, visualization_bev, global_step=batch_idx)
+            name = f'bev'
+            self.logger.experiment.add_images(name, visualisation_bev, global_step=batch_idx)
 
         if self.cfg.EVAL.RGB_SUPERVISION:
             rgb_target = batch['rgb_label_1']

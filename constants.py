@@ -31,11 +31,14 @@ BIRDVIEW_COLOURS = np.array([[255, 255, 255],          # Background
 
 # Obtained with sqrt of inverse frequency
 SEMANTIC_SEG_WEIGHTS = np.array([1.0, 1.0, 1.0, 2.0, 3.0, 1.0, 1.0, 1.0])
+# SEMANTIC_SEG_WEIGHTS = np.ones(23, dtype=float)
+# SEMANTIC_SEG_WEIGHTS[4] = 3.0
+# SEMANTIC_SEG_WEIGHTS[10] = 2.0
 
 VOXEL_SEG_WEIGHTS = np.array([1.0, 1.0, 1.0, 1.5, 2.0, 3.0, 1.0, 1.0, 1.0])
 
 VOXEL_LABEL_CARLA = {
-    0:   'Nothing',  # None
+    0:   'Background',  # None
     1:   'Building',  # Building
     2:   'Fences',  # Fences
     3:   'Other',  # Other

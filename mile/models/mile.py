@@ -303,16 +303,18 @@ class Mile(nn.Module):
         """
         # Encode RGB images, route_map, speed using intrinsics and extrinsics
         # to a 512 dimensional vector
-        b, s = batch['image'].shape[:2]
-        embedding = self.encode(batch)  # dim (b, s, 512)
+        rf = self.cfg.RECEPTIVE_FIELD
+        fh = self.cfg.FUTURE_HORIZON
+        b, s = batch['image'][:, :rf].shape[:2]
+        embedding = self.encode({key: value[:, :rf] for key, value in batch.items()})  # dim (b, s, 512)
 
         output = dict()
         if self.cfg.MODEL.TRANSITION.ENABLED:
             # Recurrent state sequence module
             if deployment:
-                action = batch['action']
+                action = batch['action'][:, :rf]
             else:
-                action = torch.cat([batch['throttle_brake'], batch['steering']], dim=-1)
+                action = torch.cat([batch['throttle_brake'][:, :rf], batch['steering'][:, :rf]], dim=-1)
             state_dict = self.rssm(embedding, action, use_sample=not deployment, policy=self.policy)
 
             if deployment:
@@ -370,7 +372,15 @@ class Mile(nn.Module):
             voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, s)
             output = {**output, **voxel_decoder_output}
 
-        return output
+        state_imagine = {'hidden_state': state_dict['posterior']['hidden_state'][:, -1],
+                         'sample': state_dict['posterior']['sample'][:, -1],
+                         'throttle_brake': batch['throttle_brake'][:, rf:],
+                         'steering': batch['steering'][:, rf:]}
+        n_prediction_samples = self.cfg.PREDICTION.N_SAMPLES
+        output_imagine = []
+        for _ in range(n_prediction_samples):
+            output_imagine.append(self.imagine(state_imagine, future_horizon=fh))
+        return output, output_imagine
 
     def encode(self, batch):
         b, s = batch['image'].shape[:2]
@@ -517,7 +527,7 @@ class Mile(nn.Module):
             bev_decoder_output = self.bev_decoder(pack_sequence_dim(output_imagine['state']))
             bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, future_horizon)
             output_imagine = {**output_imagine, **bev_decoder_output}
-        
+
         if self.cfg.EVAL.RGB_SUPERVISION:
             rgb_decoder_output = self.rgb_decoder(state)
             rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, future_horizon)
@@ -588,9 +598,46 @@ class Mile(nn.Module):
         for k, v in output_imagine.items():
             output_imagine[k] = torch.stack(v, dim=1)
 
-        bev_decoder_output = self.bev_decoder(pack_sequence_dim(output_imagine['state']))
-        bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, future_horizon)
-        output_imagine = {**output_imagine, **bev_decoder_output}
+        state = pack_sequence_dim(output_imagine['state'])
+
+        if self.cfg.SEMANTIC_SEG.ENABLED:
+            bev_decoder_output = self.bev_decoder(state)
+            bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, future_horizon)
+            output_imagine = {**output_imagine, **bev_decoder_output}
+
+        if self.cfg.EVAL.RGB_SUPERVISION:
+            rgb_decoder_output = self.rgb_decoder(state)
+            rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, future_horizon)
+            output_imagine = {**output_imagine, **rgb_decoder_output}
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            lidar_output = self.lidar_re(state)
+            lidar_output = unpack_sequence_dim(lidar_output, b, future_horizon)
+            output_imagine = {**output_imagine, **lidar_output}
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            lidar_seg_output = self.lidar_segmentation(state)
+            lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, future_horizon)
+            output_imagine = {**output_imagine, **lidar_seg_output}
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            sem_image_output = self.sem_image_decoder(state)
+            sem_image_output = unpack_sequence_dim(sem_image_output, b, future_horizon)
+            output_imagine = {**output_imagine, **sem_image_output}
+
+        if self.cfg.DEPTH.ENABLED:
+            depth_image_output = self.depth_image_decoder(state)
+            depth_image_output = unpack_sequence_dim(depth_image_output, b, future_horizon)
+            output_imagine = {**output_imagine, **depth_image_output}
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            # voxel_feature_xy = self.voxel_feature_xy_decoder(state)
+            # voxel_feature_xz = self.voxel_feature_xz_decoder(state)
+            # voxel_feature_yz = self.voxel_feature_yz_decoder(state)
+            # voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
+            voxel_decoder_output = self.voxel_decoder(state)
+            voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, future_horizon)
+            output_imagine = {**output_imagine, **voxel_decoder_output}
 
         return output_imagine
 

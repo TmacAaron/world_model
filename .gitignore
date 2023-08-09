@@ -15,3 +15,4 @@ carla_gym/envs/__pycache__/__init__.cpython-38.pyc
 .ipynb_checkpoints/
 *.ipynb
 tensorboard_logs/
+env/

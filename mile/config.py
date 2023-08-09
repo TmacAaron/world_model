@@ -50,6 +50,9 @@ _C.LOG_VIDEO_INTERVAL = 5000
 _C.RECEPTIVE_FIELD = 1
 _C.FUTURE_HORIZON = 1
 
+_C.PREDICTION = CN()
+_C.PREDICTION.N_SAMPLES = 2
+
 ###########
 # Optimizer
 ###########
