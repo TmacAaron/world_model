@@ -566,7 +566,7 @@ class Mile(nn.Module):
 
     def imagine(self, batch, predict_action=False, future_horizon=None):
         """ This is only used for visualisation of future prediction"""
-        assert self.cfg.MODEL.TRANSITION.ENABLED and self.cfg.SEMANTIC_SEG.ENABLED
+        assert self.cfg.MODEL.TRANSITION.ENABLED
         if future_horizon is None:
             future_horizon = self.cfg.FUTURE_HORIZON
 
