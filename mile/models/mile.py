@@ -4,7 +4,8 @@ import timm
 
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
-from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, ConvDecoder
+from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, ConvDecoder, \
+    PositionEmbeddingSine, DecoderDS
 from mile.models.frustum_pooling import FrustumPooling
 from mile.layers.layers import BasicBlock
 from mile.models.transition import RSSM
@@ -16,6 +17,7 @@ class Mile(nn.Module):
         self.cfg = cfg
         self.receptive_field = cfg.RECEPTIVE_FIELD
 
+        embedding_n_channels = self.cfg.MODEL.EMBEDDING_DIM
         # Image feature encoder
         if self.cfg.MODEL.ENCODER.NAME == 'resnet18':
             self.encoder = timm.create_model(
@@ -23,153 +25,234 @@ class Mile(nn.Module):
             )
             feature_info = self.encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
 
-        self.feat_decoder = Decoder(feature_info, self.cfg.MODEL.ENCODER.OUT_CHANNELS)
+        if self.cfg.MODEL.TRANSFORMER.ENABLED:
+            self.feat_decoder = DecoderDS(feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
 
-        if not self.cfg.EVAL.NO_LIFTING:
-            # Frustum pooling
-            bev_downsample = cfg.BEV.FEATURE_DOWNSAMPLE
-            self.frustum_pooling = FrustumPooling(
-                size=(cfg.BEV.SIZE[0] // bev_downsample, cfg.BEV.SIZE[1] // bev_downsample),
-                scale=cfg.BEV.RESOLUTION * bev_downsample,
-                offsetx=cfg.BEV.OFFSET_FORWARD / bev_downsample,
-                dbound=cfg.BEV.FRUSTUM_POOL.D_BOUND,
-                downsample=8,
+            if self.cfg.MODEL.LIDAR.ENABLED:
+                self.range_view_encoder = timm.create_model(
+                    cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+                )
+                range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+                self.range_view_decoder = DecoderDS(range_view_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+
+            self.position_encode = PositionEmbeddingSine(
+                num_pos_feats=self.cfg.MODEL.TRANSFORMER.CHANNELS // 2,
+                normalize=True)
+
+            self.type_embedding = nn.Parameter(torch.zeros(1, 1, self.cfg.MODEL.TRANSFORMER.CHANNELS, 2))
+
+            self.encoder_layer = nn.TransformerEncoderLayer(
+                d_model=self.cfg.MODEL.TRANSFORMER.CHANNELS,
+                nhead=8,
+                dropout=0.1,
             )
+            self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6)
 
-            # mono depth head
-            self.depth_decoder = Decoder(feature_info, self.cfg.MODEL.ENCODER.OUT_CHANNELS)
-            self.depth = nn.Conv2d(self.depth_decoder.out_channels, self.frustum_pooling.D, kernel_size=1)
-            # only lift argmax of depth distribution for speed
-            self.sparse_depth = cfg.BEV.FRUSTUM_POOL.SPARSE
-            self.sparse_depth_count = cfg.BEV.FRUSTUM_POOL.SPARSE_COUNT
-
-        backbone_bev_in_channels = self.cfg.MODEL.ENCODER.OUT_CHANNELS
-
-
-        # Route map
-        if self.cfg.MODEL.ROUTE.ENABLED:
-            self.backbone_route = RouteEncode(cfg.MODEL.ROUTE.CHANNELS, cfg.MODEL.ROUTE.BACKBONE)
-            backbone_bev_in_channels += self.backbone_route.out_channels
-
-        # Measurements
-        if self.cfg.MODEL.MEASUREMENTS.ENABLED:
-            self.command_encoder = nn.Sequential(
-                nn.Embedding(6, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
-                nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
-                nn.ReLU(True),
-                nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
-                nn.ReLU(True),
-            )
-
-            self.command_next_encoder = nn.Sequential(
-                nn.Embedding(6, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
-                nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
-                nn.ReLU(True),
-                nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
-                nn.ReLU(True),
-            )
-
-            self.gps_encoder = nn.Sequential(
-                nn.Linear(2*2, self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS),
-                nn.ReLU(True),
-                nn.Linear(self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS, self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS),
-                nn.ReLU(True),
-            )
-
-            backbone_bev_in_channels += 2*self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS
-            backbone_bev_in_channels += self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS
-
-        # Speed as input
-        self.speed_enc = nn.Sequential(
-            nn.Linear(1, cfg.MODEL.SPEED.CHANNELS),
-            nn.ReLU(True),
-            nn.Linear(cfg.MODEL.SPEED.CHANNELS, cfg.MODEL.SPEED.CHANNELS),
-            nn.ReLU(True),
-        )
-        backbone_bev_in_channels += cfg.MODEL.SPEED.CHANNELS
-        self.speed_normalisation = cfg.SPEED.NORMALISATION
-
-        embedding_n_channels = self.cfg.MODEL.EMBEDDING_DIM
-
-        # if self.cfg.MODEL.LIDAR.MULTI_VIEW:
-        #     self.lidar_encoder_xz = timm.create_model(
-        #         cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-        #     )
-        #     lidar_feature_info_xz = self.lidar_encoder_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-        #     self.lidar_decoder_xz = Decoder(lidar_feature_info_xz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-        #
-        #     self.lidar_encoder_yz = timm.create_model(
-        #         cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-        #     )
-        #     lidar_feature_info_yz = self.lidar_encoder_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-        #     self.lidar_decoder_yz = Decoder(lidar_feature_info_yz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-        #
-        #     self.backbone_lidar_xz = timm.create_model(
-        #         cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
-        #         in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
-        #     )
-        #     feature_info_xz = self.backbone_lidar_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-        #     self.state_conv_xz = nn.Sequential(
-        #         BasicBlock(feature_info_xz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
-        #         BasicBlock(embedding_n_channels, embedding_n_channels),
-        #         nn.AdaptiveAvgPool2d(output_size=(1, 1)),
-        #         nn.Flatten(start_dim=1),
-        #     )
-        #
-        #     self.backbone_lidar_yz = timm.create_model(
-        #         cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
-        #         in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
-        #     )
-        #     feature_info_yz = self.backbone_lidar_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-        #     self.state_conv_yz = nn.Sequential(
-        #         BasicBlock(feature_info_yz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
-        #         BasicBlock(embedding_n_channels, embedding_n_channels),
-        #         nn.AdaptiveAvgPool2d(output_size=(1, 1)),
-        #         nn.Flatten(start_dim=1),
-        #     )
-        #
-        #     self.embedding_combine = nn.Sequential(
-        #         nn.Linear(3 * embedding_n_channels, embedding_n_channels),
-        #         # nn.BatchNorm1d(embedding_n_channels),
-        #         nn.ReLU(True)
-        #     )
-
-        if self.cfg.MODEL.LIDAR.ENABLED:
-            # self.lidar_encoder_xy = timm.create_model(
-            #     cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-            # )
-            # lidar_feature_info_xy = self.lidar_encoder_xy.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-            # self.lidar_decoder_xy = Decoder(lidar_feature_info_xy, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-            # backbone_bev_in_channels += self.cfg.MODEL.LIDAR.OUT_CHANNELS
-            self.range_view_encoder = timm.create_model(
-                cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-            )
-            range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-            self.range_view_decoder = Decoder(range_view_feature_info, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-            self.range_view_state_conv = nn.Sequential(
-                BasicBlock(self.cfg.MODEL.LIDAR.OUT_CHANNELS, embedding_n_channels, stride=2, downsample=True),
-                BasicBlock(embedding_n_channels, embedding_n_channels, stride=2, downsample=True),
+            self.image_feature_conv = nn.Sequential(
+                BasicBlock(self.cfg.MODEL.TRANSFORMER.CHANNELS, embedding_n_channels, stride=2, downsample=True),
+                BasicBlock(embedding_n_channels, embedding_n_channels),
                 nn.AdaptiveAvgPool2d(output_size=(1, 1)),
                 nn.Flatten(start_dim=1),
             )
+            self.lidar_feature_conv = nn.Sequential(
+                BasicBlock(self.cfg.MODEL.TRANSFORMER.CHANNELS, embedding_n_channels, stride=2, downsample=True),
+                BasicBlock(embedding_n_channels, embedding_n_channels),
+                nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+                nn.Flatten(start_dim=1),
+            )
+            feature_n_channels = 2 * embedding_n_channels
 
-            self.embedding_combine = nn.Linear(2 * embedding_n_channels, embedding_n_channels)
+            # Route map
+            if self.cfg.MODEL.ROUTE.ENABLED:
+                self.backbone_route = RouteEncode(self.cfg.MODEL.ROUTE.CHANNELS, cfg.MODEL.ROUTE.BACKBONE)
+                feature_n_channels += self.cfg.MODEL.ROUTE.CHANNELS
 
-        # Bev network
-        self.backbone_bev = timm.create_model(
-            cfg.MODEL.BEV.BACKBONE,
-            in_chans=backbone_bev_in_channels,
-            pretrained=True,
-            features_only=True,
-            out_indices=[3],
-        )
-        feature_info_bev = self.backbone_bev.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-        self.final_state_conv = nn.Sequential(
-            BasicBlock(feature_info_bev[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
-            BasicBlock(embedding_n_channels, embedding_n_channels),
-            nn.AdaptiveAvgPool2d(output_size=(1, 1)),
-            nn.Flatten(start_dim=1),
-        )
+            # Measurements
+            if self.cfg.MODEL.MEASUREMENTS.ENABLED:
+                self.command_encoder = nn.Sequential(
+                    nn.Embedding(6, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                )
+
+                self.command_next_encoder = nn.Sequential(
+                    nn.Embedding(6, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                )
+
+                self.gps_encoder = nn.Sequential(
+                    nn.Linear(2*2, self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS),
+                    nn.ReLU(True),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS, self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS),
+                    nn.ReLU(True),
+                )
+                feature_n_channels += 2 * self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS
+                feature_n_channels += self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS
+
+            # Speed as input
+            self.speed_enc = nn.Sequential(
+                nn.Linear(1, cfg.MODEL.SPEED.CHANNELS),
+                nn.ReLU(True),
+                nn.Linear(cfg.MODEL.SPEED.CHANNELS, cfg.MODEL.SPEED.CHANNELS),
+                nn.ReLU(True),
+            )
+            feature_n_channels += cfg.MODEL.SPEED.CHANNELS
+            self.speed_normalisation = cfg.SPEED.NORMALISATION
+
+            self.features_combine = nn.Linear(feature_n_channels, embedding_n_channels)
+
+        else:
+            self.feat_decoder = Decoder(feature_info, self.cfg.MODEL.ENCODER.OUT_CHANNELS)
+            if not self.cfg.EVAL.NO_LIFTING:
+                # Frustum pooling
+                bev_downsample = cfg.BEV.FEATURE_DOWNSAMPLE
+                self.frustum_pooling = FrustumPooling(
+                    size=(cfg.BEV.SIZE[0] // bev_downsample, cfg.BEV.SIZE[1] // bev_downsample),
+                    scale=cfg.BEV.RESOLUTION * bev_downsample,
+                    offsetx=cfg.BEV.OFFSET_FORWARD / bev_downsample,
+                    dbound=cfg.BEV.FRUSTUM_POOL.D_BOUND,
+                    downsample=8,
+                )
+
+                # mono depth head
+                self.depth_decoder = Decoder(feature_info, self.cfg.MODEL.ENCODER.OUT_CHANNELS)
+                self.depth = nn.Conv2d(self.depth_decoder.out_channels, self.frustum_pooling.D, kernel_size=1)
+                # only lift argmax of depth distribution for speed
+                self.sparse_depth = cfg.BEV.FRUSTUM_POOL.SPARSE
+                self.sparse_depth_count = cfg.BEV.FRUSTUM_POOL.SPARSE_COUNT
+
+            backbone_bev_in_channels = self.cfg.MODEL.ENCODER.OUT_CHANNELS
+
+
+            # Route map
+            if self.cfg.MODEL.ROUTE.ENABLED:
+                self.backbone_route = RouteEncode(cfg.MODEL.ROUTE.CHANNELS, cfg.MODEL.ROUTE.BACKBONE)
+                backbone_bev_in_channels += self.backbone_route.out_channels
+
+            # Measurements
+            if self.cfg.MODEL.MEASUREMENTS.ENABLED:
+                self.command_encoder = nn.Sequential(
+                    nn.Embedding(6, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                )
+
+                self.command_next_encoder = nn.Sequential(
+                    nn.Embedding(6, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS, self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS),
+                    nn.ReLU(True),
+                )
+
+                self.gps_encoder = nn.Sequential(
+                    nn.Linear(2*2, self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS),
+                    nn.ReLU(True),
+                    nn.Linear(self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS, self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS),
+                    nn.ReLU(True),
+                )
+
+                backbone_bev_in_channels += 2*self.cfg.MODEL.MEASUREMENTS.COMMAND_CHANNELS
+                backbone_bev_in_channels += self.cfg.MODEL.MEASUREMENTS.GPS_CHANNELS
+
+            # Speed as input
+            self.speed_enc = nn.Sequential(
+                nn.Linear(1, cfg.MODEL.SPEED.CHANNELS),
+                nn.ReLU(True),
+                nn.Linear(cfg.MODEL.SPEED.CHANNELS, cfg.MODEL.SPEED.CHANNELS),
+                nn.ReLU(True),
+            )
+            backbone_bev_in_channels += cfg.MODEL.SPEED.CHANNELS
+            self.speed_normalisation = cfg.SPEED.NORMALISATION
+
+            embedding_n_channels = self.cfg.MODEL.EMBEDDING_DIM
+
+            # if self.cfg.MODEL.LIDAR.MULTI_VIEW:
+            #     self.lidar_encoder_xz = timm.create_model(
+            #         cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+            #     )
+            #     lidar_feature_info_xz = self.lidar_encoder_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            #     self.lidar_decoder_xz = Decoder(lidar_feature_info_xz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+            #
+            #     self.lidar_encoder_yz = timm.create_model(
+            #         cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+            #     )
+            #     lidar_feature_info_yz = self.lidar_encoder_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            #     self.lidar_decoder_yz = Decoder(lidar_feature_info_yz, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+            #
+            #     self.backbone_lidar_xz = timm.create_model(
+            #         cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
+            #         in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
+            #     )
+            #     feature_info_xz = self.backbone_lidar_xz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            #     self.state_conv_xz = nn.Sequential(
+            #         BasicBlock(feature_info_xz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
+            #         BasicBlock(embedding_n_channels, embedding_n_channels),
+            #         nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+            #         nn.Flatten(start_dim=1),
+            #     )
+            #
+            #     self.backbone_lidar_yz = timm.create_model(
+            #         cfg.MODEL.LIDAR.BACKBONE, pretrained=True, features_only=True, out_indices=[3],
+            #         in_chans=cfg.MODEL.LIDAR.OUT_CHANNELS
+            #     )
+            #     feature_info_yz = self.backbone_lidar_yz.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            #     self.state_conv_yz = nn.Sequential(
+            #         BasicBlock(feature_info_yz[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
+            #         BasicBlock(embedding_n_channels, embedding_n_channels),
+            #         nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+            #         nn.Flatten(start_dim=1),
+            #     )
+            #
+            #     self.embedding_combine = nn.Sequential(
+            #         nn.Linear(3 * embedding_n_channels, embedding_n_channels),
+            #         # nn.BatchNorm1d(embedding_n_channels),
+            #         nn.ReLU(True)
+            #     )
+
+            if self.cfg.MODEL.LIDAR.ENABLED:
+                # self.lidar_encoder_xy = timm.create_model(
+                #     cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+                # )
+                # lidar_feature_info_xy = self.lidar_encoder_xy.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+                # self.lidar_decoder_xy = Decoder(lidar_feature_info_xy, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+                # backbone_bev_in_channels += self.cfg.MODEL.LIDAR.OUT_CHANNELS
+                self.range_view_encoder = timm.create_model(
+                    cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+                )
+                range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+                self.range_view_decoder = Decoder(range_view_feature_info, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+                self.range_view_state_conv = nn.Sequential(
+                    BasicBlock(self.cfg.MODEL.LIDAR.OUT_CHANNELS, embedding_n_channels, stride=2, downsample=True),
+                    BasicBlock(embedding_n_channels, embedding_n_channels, stride=2, downsample=True),
+                    nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+                    nn.Flatten(start_dim=1),
+                )
+
+                self.embedding_combine = nn.Linear(2 * embedding_n_channels, embedding_n_channels)
+
+            # Bev network
+            self.backbone_bev = timm.create_model(
+                cfg.MODEL.BEV.BACKBONE,
+                in_chans=backbone_bev_in_channels,
+                pretrained=True,
+                features_only=True,
+                out_indices=[3],
+            )
+            feature_info_bev = self.backbone_bev.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+            self.final_state_conv = nn.Sequential(
+                BasicBlock(feature_info_bev[-1]['num_chs'], embedding_n_channels, stride=2, downsample=True),
+                BasicBlock(embedding_n_channels, embedding_n_channels),
+                nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+                nn.Flatten(start_dim=1),
+            )
 
         # Recurrent model
         self.receptive_field = self.cfg.RECEPTIVE_FIELD
@@ -396,83 +479,138 @@ class Mile(nn.Module):
         # Aggregate features to output resolution (H/8, W/8)
         x = self.feat_decoder(xs)
 
-        if not self.cfg.EVAL.NO_LIFTING:
-            # Depth distribution
-            depth = self.depth(self.depth_decoder(xs)).softmax(dim=1)
-
-            if self.sparse_depth:
-                # only lift depth for topk most likely depth bins
-                topk_bins = depth.topk(self.sparse_depth_count, dim=1)[1]
-                depth_mask = torch.zeros(depth.shape, device=depth.device, dtype=torch.bool)
-                depth_mask.scatter_(1, topk_bins, 1)
-            else:
-                depth_mask = torch.zeros(0, device=depth.device)
-            x = (depth.unsqueeze(1) * x.unsqueeze(2)).type_as(x)  # outer product
-
-            #  Add camera dimension
-            x = x.unsqueeze(1)
-            x = x.permute(0, 1, 3, 4, 5, 2)
-
-            x = self.frustum_pooling(x, intrinsics.unsqueeze(1), extrinsics.unsqueeze(1), depth_mask)
-
-        if self.cfg.MODEL.ROUTE.ENABLED:
-            route_map = pack_sequence_dim(batch['route_map'])
-            route_map_features = self.backbone_route(route_map)
-            route_map_features = route_map_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
-            x = torch.cat([x, route_map_features], dim=1)
-
-        if self.cfg.MODEL.MEASUREMENTS.ENABLED:
-            route_command = pack_sequence_dim(batch['route_command'])
-            gps_vector = pack_sequence_dim(batch['gps_vector'])
-            route_command_next = pack_sequence_dim(batch['route_command_next'])
-            gps_vector_next = pack_sequence_dim(batch['gps_vector_next'])
-
-            command_features = self.command_encoder(route_command)
-            command_features = command_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
-            x = torch.cat([x, command_features], dim=1)
-
-            command_next_features = self.command_next_encoder(route_command_next)
-            command_next_features = command_next_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
-            x = torch.cat([x, command_next_features], dim=1)
-
-            gps_features = self.gps_encoder(torch.cat([gps_vector, gps_vector_next], dim=-1))
-            gps_features = gps_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
-            x = torch.cat([x, gps_features], dim=1)
-
-        speed_features = self.speed_enc(speed / self.speed_normalisation)
-        speed_features = speed_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
-        x = torch.cat((x, speed_features), 1)
-
-        embedding = self.backbone_bev(x)[-1]
-        embedding = self.final_state_conv(embedding)
-
-        if self.cfg.MODEL.LIDAR.ENABLED:
-            # points_histogram_xy = pack_sequence_dim(batch['points_histogram_xy'])
-            # xs_lidar_xy = self.lidar_encoder_xy(points_histogram_xy)
-            # lidar_features_xy = self.lidar_decoder_xy(xs_lidar_xy)
-            # x = torch.cat([x, lidar_features_xy], dim=1)
+        if self.cfg.MODEL.TRANSFORMER.ENABLED:
             range_view = pack_sequence_dim(batch['range_view_pcd_xyzd'])
             lidar_xs = self.range_view_encoder(range_view)
             lidar_features = self.range_view_decoder(lidar_xs)
-            lidar_embedding = self.range_view_state_conv(lidar_features)
-            # embedding = (lidar_embedding + embedding) / 2
-            embedding = self.embedding_combine(torch.cat([embedding, lidar_embedding], dim=-1))
+            bs_image, _, h_image, w_image = x.shape
+            bs_lidar, _, h_lidar, w_lidar = lidar_features.shape
 
-        # if self.cfg.MODEL.LIDAR.MULTI_VIEW:
-        #     points_histogram_xz = pack_sequence_dim(batch['points_histogram_xz'])
-        #     xs_lidar_xz = self.lidar_encoder_xz(points_histogram_xz)
-        #     lidar_features_xz = self.lidar_decoder_xz(xs_lidar_xz)
-        #     embedding_xz = self.backbone_lidar_xz(lidar_features_xz)[-1]
-        #     embedding_xz = self.state_conv_xz(embedding_xz)
-        #
-        #     points_histogram_yz = pack_sequence_dim(batch['points_histogram_yz'])
-        #     xs_lidar_yz = self.lidar_encoder_yz(points_histogram_yz)
-        #     lidar_features_yz = self.lidar_decoder_yz(xs_lidar_yz)
-        #     embedding_yz = self.backbone_lidar_xz(lidar_features_yz)[-1]
-        #     embedding_yz = self.state_conv_yz(embedding_yz)
-        #
-        #     embedding = torch.cat([embedding, embedding_xz, embedding_yz], dim=-1)
-        #     embedding = self.embedding_combine(embedding)
+            image_tokens = x + self.position_encode(x)
+            lidar_tokens = lidar_features + self.position_encode(lidar_features)
+
+            image_tokens = image_tokens.flatten(start_dim=2).permute(2, 0, 1)  # B, C, W, H -> N, B, C
+            lidar_tokens = lidar_tokens.flatten(start_dim=2).permute(2, 0, 1)
+
+            image_tokens += self.type_embedding[:, :, :, 0]
+            lidar_tokens += self.type_embedding[:, :, :, 1]
+
+            L_image, _, _ = image_tokens.shape
+            L_lidar, _, _ = lidar_tokens.shape
+
+            tokens = torch.cat([image_tokens, lidar_tokens], dim=0)
+            tokens_out = self.transformer_encoder(tokens)
+            image_tokens_out = tokens_out[:L_image].permute(1, 2, 0).reshape((bs_image, -1, h_image, w_image))
+            lidar_tokens_out = tokens_out[L_image:].permute(1, 2, 0).reshape((bs_lidar, -1, h_lidar, w_lidar))
+
+            image_features_out = self.image_feature_conv(image_tokens_out)
+            lidar_features_out = self.lidar_feature_conv(lidar_tokens_out)
+
+            features = [image_features_out, lidar_features_out]
+
+            if self.cfg.MODEL.ROUTE.ENABLED:
+                route_map = pack_sequence_dim(batch['route_map'])
+                route_map_features = self.backbone_route(route_map)
+                features.append(route_map_features)
+
+            if self.cfg.MODEL.MEASUREMENTS.ENABLED:
+                route_command = pack_sequence_dim(batch['route_command'])
+                gps_vector = pack_sequence_dim(batch['gps_vector'])
+                route_command_next = pack_sequence_dim(batch['route_command_next'])
+                gps_vector_next = pack_sequence_dim(batch['gps_vector_next'])
+
+                command_features = self.command_encoder(route_command)
+                features.append(command_features)
+
+                command_next_features = self.command_next_encoder(route_command_next)
+                features.append(command_next_features)
+
+                gps_features = self.gps_encoder(torch.cat([gps_vector, gps_vector_next], dim=-1))
+                features.append(gps_features)
+
+            speed_features = self.speed_enc(speed / self.speed_normalisation)
+            features.append(speed_features)
+
+            embedding = self.features_combine(torch.cat(features, dim=-1))
+
+        else:
+            if not self.cfg.EVAL.NO_LIFTING:
+                # Depth distribution
+                depth = self.depth(self.depth_decoder(xs)).softmax(dim=1)
+
+                if self.sparse_depth:
+                    # only lift depth for topk most likely depth bins
+                    topk_bins = depth.topk(self.sparse_depth_count, dim=1)[1]
+                    depth_mask = torch.zeros(depth.shape, device=depth.device, dtype=torch.bool)
+                    depth_mask.scatter_(1, topk_bins, 1)
+                else:
+                    depth_mask = torch.zeros(0, device=depth.device)
+                x = (depth.unsqueeze(1) * x.unsqueeze(2)).type_as(x)  # outer product
+
+                #  Add camera dimension
+                x = x.unsqueeze(1)
+                x = x.permute(0, 1, 3, 4, 5, 2)
+
+                x = self.frustum_pooling(x, intrinsics.unsqueeze(1), extrinsics.unsqueeze(1), depth_mask)
+
+            if self.cfg.MODEL.ROUTE.ENABLED:
+                route_map = pack_sequence_dim(batch['route_map'])
+                route_map_features = self.backbone_route(route_map)
+                route_map_features = route_map_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
+                x = torch.cat([x, route_map_features], dim=1)
+
+            if self.cfg.MODEL.MEASUREMENTS.ENABLED:
+                route_command = pack_sequence_dim(batch['route_command'])
+                gps_vector = pack_sequence_dim(batch['gps_vector'])
+                route_command_next = pack_sequence_dim(batch['route_command_next'])
+                gps_vector_next = pack_sequence_dim(batch['gps_vector_next'])
+
+                command_features = self.command_encoder(route_command)
+                command_features = command_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
+                x = torch.cat([x, command_features], dim=1)
+
+                command_next_features = self.command_next_encoder(route_command_next)
+                command_next_features = command_next_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
+                x = torch.cat([x, command_next_features], dim=1)
+
+                gps_features = self.gps_encoder(torch.cat([gps_vector, gps_vector_next], dim=-1))
+                gps_features = gps_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
+                x = torch.cat([x, gps_features], dim=1)
+
+            speed_features = self.speed_enc(speed / self.speed_normalisation)
+            speed_features = speed_features.unsqueeze(2).unsqueeze(3).expand(-1, -1, x.shape[2], x.shape[3])
+            x = torch.cat((x, speed_features), 1)
+
+            embedding = self.backbone_bev(x)[-1]
+            embedding = self.final_state_conv(embedding)
+
+            if self.cfg.MODEL.LIDAR.ENABLED:
+                # points_histogram_xy = pack_sequence_dim(batch['points_histogram_xy'])
+                # xs_lidar_xy = self.lidar_encoder_xy(points_histogram_xy)
+                # lidar_features_xy = self.lidar_decoder_xy(xs_lidar_xy)
+                # x = torch.cat([x, lidar_features_xy], dim=1)
+                range_view = pack_sequence_dim(batch['range_view_pcd_xyzd'])
+                lidar_xs = self.range_view_encoder(range_view)
+                lidar_features = self.range_view_decoder(lidar_xs)
+                lidar_embedding = self.range_view_state_conv(lidar_features)
+                # embedding = (lidar_embedding + embedding) / 2
+                embedding = self.embedding_combine(torch.cat([embedding, lidar_embedding], dim=-1))
+
+            # if self.cfg.MODEL.LIDAR.MULTI_VIEW:
+            #     points_histogram_xz = pack_sequence_dim(batch['points_histogram_xz'])
+            #     xs_lidar_xz = self.lidar_encoder_xz(points_histogram_xz)
+            #     lidar_features_xz = self.lidar_decoder_xz(xs_lidar_xz)
+            #     embedding_xz = self.backbone_lidar_xz(lidar_features_xz)[-1]
+            #     embedding_xz = self.state_conv_xz(embedding_xz)
+            #
+            #     points_histogram_yz = pack_sequence_dim(batch['points_histogram_yz'])
+            #     xs_lidar_yz = self.lidar_encoder_yz(points_histogram_yz)
+            #     lidar_features_yz = self.lidar_decoder_yz(xs_lidar_yz)
+            #     embedding_yz = self.backbone_lidar_xz(lidar_features_yz)[-1]
+            #     embedding_yz = self.state_conv_yz(embedding_yz)
+            #
+            #     embedding = torch.cat([embedding, embedding_xz, embedding_yz], dim=-1)
+            #     embedding = self.embedding_combine(embedding)
 
         embedding = unpack_sequence_dim(embedding, b, s)
         return embedding

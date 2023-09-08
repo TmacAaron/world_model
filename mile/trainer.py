@@ -411,8 +411,9 @@ class WorldModelTrainer(pl.LightningModule):
             target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
             # pred = F.pad(pred.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
             preds = []
-            for bev_imagine in bev_imagines:
-                p_i = torch.cat([pred, bev_imagine], dim=1)
+            for i, bev_imagine in enumerate(bev_imagines):
+                bev_receptive = pred if i == 0 else torch.zeros_like(pred)
+                p_i = torch.cat([bev_receptive, bev_imagine], dim=1)
                 p_i = colours[p_i]
                 p_i = F.pad(p_i.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
                 preds.append(p_i)
@@ -449,8 +450,9 @@ class WorldModelTrainer(pl.LightningModule):
             b, _, c, h, w = rgb_target.size()
 
             rgb_preds = []
-            for rgb_imagine in rgb_imagines:
-                pred_imagine = torch.cat([rgb_pred, rgb_imagine], dim=1)
+            for i, rgb_imagine in enumerate(rgb_imagines):
+                rgb_receptive = rgb_pred if i == 0 else torch.ones_like(rgb_pred)
+                pred_imagine = torch.cat([rgb_receptive, rgb_imagine], dim=1)
                 rgb_preds.append(F.pad(pred_imagine, [5, 5, 5, 5], 'constant', 0.8))
 
             rgb_target = F.pad(rgb_target, [5, 5, 5, 5], 'constant', 0.8)
@@ -504,6 +506,8 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.LIDAR_RE.ENABLED:
             lidar_target = batch['range_view_label_1']
             lidar_pred = output['lidar_reconstruction_1'].detach()
+            lidar_imagine = output_imagine[0]['lidar_reconstruction_1'].detach()
+            lidar_pred = torch.cat([lidar_pred, lidar_imagine], dim=1)
 
             visualisation_lidar = torch.cat(
                 [lidar_pred[:, :, -1, :, :], lidar_target[:, :, -1, :, :]],
@@ -542,6 +546,8 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.LIDAR_SEG.ENABLED:
             lidar_seg_target = batch['range_view_seg_label_1'][:, :, 0]
             lidar_seg_pred = torch.argmax(output['lidar_segmentation_1'].detach(), dim=-3)
+            lidar_seg_imagine = torch.argmax(output_imagine[0]['lidar_segmentation_1'].detach(), dim=-3)
+            lidar_seg_pred = torch.cat([lidar_seg_pred, lidar_seg_imagine], dim=1)
 
             colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=lidar_seg_pred.device)
             lidar_seg_target = colours[lidar_seg_target]
@@ -557,6 +563,8 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.SEMANTIC_IMAGE.ENABLED:
             sem_target = batch['semantic_image_label_1'][:, :, 0]
             sem_pred = torch.argmax(output['semantic_image_1'].detach(), dim=-3)
+            sem_imagine = torch.argmax(output_imagine[0]['semantic_image_1'].detach(), dim=-3)
+            sem_pred = torch.cat([sem_pred, sem_imagine], dim=1)
 
             colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=sem_pred.device)
             sem_target = colours[sem_target]
@@ -572,6 +580,8 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.DEPTH.ENABLED:
             depth_target = batch['depth_label_1']
             depth_pred = output['depth_1'].detach()
+            depth_imagine = output_imagine[0]['depth_1'].detach()
+            depth_pred = torch.cat([depth_pred, depth_imagine], dim=1)
 
             visualisation_depth = torch.cat([depth_pred, depth_target], dim=-2).detach()
             name_ = f'{name}_depth'
@@ -580,12 +590,29 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.VOXEL_SEG.ENABLED:
             voxel_target = batch['voxel_label_1'][0, 0, 0].cpu().numpy()
             voxel_pred = torch.argmax(output['voxel_1'].detach(), dim=-4).cpu().numpy()[0, 0]
+            voxel_imagine = torch.argmax(output_imagine[0]['voxel_1'].detach(), dim=-4).cpu().numpy()[0, 0]
             colours = np.asarray(VOXEL_COLOURS, dtype=float) / 255.0
             voxel_color_target = colours[voxel_target]
             voxel_color_pred = colours[voxel_pred]
             name_ = f'{name}_voxel'
             self.write_voxel_figure(voxel_target, voxel_color_target, f'{name_}_target', global_step, writer)
             self.write_voxel_figure(voxel_pred, voxel_color_pred, f'{name_}_pred', global_step, writer)
+
+        if self.cfg.MODEL.ROUTE.ENABLED:
+            route_map = batch['route_map']
+            route_map = F.pad(route_map, [2, 2, 2, 2], 'constant', 0.8)
+
+            b, _, c, h, w = route_map.size()
+
+            visualisation_route = []
+            for step in range(s+f):
+                if step == s:
+                    visualisation_route.append(torch.ones(b, c, h, int(w/4), device=route_map.device))
+                visualisation_route.append(route_map[:, step])
+            visualisation_route = torch.cat(visualisation_route, dim=-1).detach()
+
+            name_ = f'{name}_input_route_map'
+            writer.add_images(name_, visualisation_route, global_step=global_step)
 
     def write_voxel_figure(self, voxel, voxel_color, name, global_step, writer):
         fig = plt.figure(figsize=(10, 10))

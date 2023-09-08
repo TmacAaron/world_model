@@ -31,11 +31,14 @@ class DataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         self.train_dataset = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        )
         self.val_dataset = CarlaDataset(
-            self.cfg, mode='val', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
+            self.cfg, mode='val', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        )
         self.predict_dataset = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root)
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        )
 
         print(f'{len(self.train_dataset)} data points in {self.train_dataset.dataset_path}')
         print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
@@ -92,7 +95,7 @@ class CarlaDataset(Dataset):
             self.cfg.POINTS.CHANNELS,
             self.cfg.POINTS.HORIZON_RESOLUTION,
             *self.cfg.POINTS.FOV,
-            self.cfg.POINTS.LIDAR_POSITION
+            self.cfg.POINTS.LIDAR_POSITION,
         )
 
         # Iterate over all runs in the data folder
@@ -222,7 +225,7 @@ class CarlaDataset(Dataset):
 
         # mask ego-vehicle
         x, y, z = EGO_VEHICLE_DIMENSION
-        ego_box = np.array([[-x/2, -y/2, 0], [x/2, y/2, z]])
+        ego_box = np.array([[-x / 2, -y / 2, 0], [x / 2, y / 2, z]])
         ego_idx = ((ego_box[0] < points) & (points < ego_box[1])).all(axis=1)
         semantics = semantics[~ego_idx]
         points = points[~ego_idx]

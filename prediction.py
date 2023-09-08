@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
+import lightning.pytorch as pl
 
 from mile.config import get_parser, get_cfg
 from mile.data.dataset import DataModule

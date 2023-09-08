@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+import math
 
 
 class RouteEncode(nn.Module):
@@ -93,6 +94,37 @@ class Decoder(nn.Module):
         for i, conv in enumerate(self.upsample_skip_convs):
             size = xs[-(i + 2)].shape[-2:]
             x = conv(xs[-(i + 2)]) + F.interpolate(x, size=size, mode='bilinear', align_corners=False)
+
+        return x
+
+
+class DecoderDS(nn.Module):
+    def __init__(self, feature_info, out_channels):
+        super().__init__()
+        n_downsample_skip_convs = len(feature_info) - 1
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(feature_info[0]['num_chs'], out_channels, 3, 1, 1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(True),
+        )
+
+        self.upsample_skip_convs = nn.ModuleList(
+            nn.Sequential(
+                nn.Conv2d(feature_info[i]['num_chs'], out_channels, 3, 1, 1, bias=False),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(True),
+            )
+            for i in range(1, n_downsample_skip_convs + 1)
+        )
+
+        self.out_channels = out_channels
+
+    def forward(self, xs: List[Tensor]) -> Tensor:
+        x = self.conv1(xs[0])
+
+        for i, conv in enumerate(self.upsample_skip_convs):
+            stride = xs[i].shape[-1] // xs[i + 1].shape[-1]
+            x = conv(xs[i + 1]) + F.max_pool2d(x, stride)
 
         return x
 
@@ -603,3 +635,48 @@ class ConvDecoder(nn.Module):
 
         output = {**output_4, **output_2, **output_1}
         return output
+
+
+class PositionEmbeddingSine(nn.Module):
+    """
+    This is a more standard version of the position embedding, very similar to the one
+    used by the Attention is all you need paper, generalized to work on images.
+    """
+
+    def __init__(
+        self, num_pos_feats=64, temperature=10000, normalize=False, scale=None
+    ):
+        super().__init__()
+        self.num_pos_feats = num_pos_feats
+        self.temperature = temperature
+        self.normalize = normalize
+        if scale is not None and normalize is False:
+            raise ValueError("normalize should be True if scale is passed")
+        if scale is None:
+            scale = 2 * math.pi
+        self.scale = scale
+
+    def forward(self, tensor):
+        x = tensor
+        _, _, h, w = x.shape
+        not_mask = torch.ones((1, h, w), device=x.device)
+        y_embed = not_mask.cumsum(1, dtype=torch.float32)
+        x_embed = not_mask.cumsum(2, dtype=torch.float32)
+        if self.normalize:
+            eps = 1e-6
+            y_embed = y_embed / (y_embed[:, -1:, :] + eps) * self.scale
+            x_embed = x_embed / (x_embed[:, :, -1:] + eps) * self.scale
+
+        dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=x.device)
+        dim_t = self.temperature ** (2 * (dim_t // 2) / self.num_pos_feats)
+
+        pos_x = x_embed[:, :, :, None] / dim_t
+        pos_y = y_embed[:, :, :, None] / dim_t
+        pos_x = torch.stack(
+            (pos_x[:, :, :, 0::2].sin(), pos_x[:, :, :, 1::2].cos()), dim=4
+        ).flatten(3)
+        pos_y = torch.stack(
+            (pos_y[:, :, :, 0::2].sin(), pos_y[:, :, :, 1::2].cos()), dim=4
+        ).flatten(3)
+        pos = torch.cat((pos_y, pos_x), dim=3).permute(0, 3, 1, 2)
+        return pos

@@ -41,6 +41,8 @@ LOSSES:
 
 MODEL:
   EMBEDDING_DIM: 512
+  TRANSFORMER:
+    ENABLED: False
 
 EVAL:
   RGB_SUPERVISION: True
@@ -49,7 +51,8 @@ RECEPTIVE_FIELD: 6
 FUTURE_HORIZON: 6
 
 PRETRAINED:
-  PATH: 'weights/epoch=37-step=57600.ckpt'
+#  PATH: 'weights/epoch=37-step=57600.ckpt'
+  PATH: ''
 #
 #DATASET:
 #  DATAROOT: ''

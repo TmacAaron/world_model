@@ -31,9 +31,10 @@ BIRDVIEW_COLOURS = np.array([[255, 255, 255],          # Background
 
 # Obtained with sqrt of inverse frequency
 SEMANTIC_SEG_WEIGHTS = np.array([1.0, 1.0, 1.0, 2.0, 3.0, 1.0, 1.0, 1.0])
-# SEMANTIC_SEG_WEIGHTS = np.ones(23, dtype=float)
-# SEMANTIC_SEG_WEIGHTS[4] = 3.0
-# SEMANTIC_SEG_WEIGHTS[10] = 2.0
+
+# VOXEL_SEG_WEIGHTS = np.ones(23, dtype=float)
+# VOXEL_SEG_WEIGHTS[4] = 3.0
+# VOXEL_SEG_WEIGHTS[10] = 2.0
 
 VOXEL_SEG_WEIGHTS = np.array([1.0, 1.0, 1.0, 1.5, 2.0, 3.0, 1.0, 1.0, 1.0])
 
@@ -116,6 +117,39 @@ VOXEL_COLOURS = np.array([[255, 255, 255],  # Background
 #                           [170, 120, 50],   # Dynamic
 #                           [45, 60, 150],    # Water
 #                           [145, 170, 100],  # Terrain
+#                           ], dtype=np.uint8)
+
+# VOXEL_COLOURS = np.array([[0, 0, 0],  # unlabeled
+#                          # cityscape
+#                           [128, 64, 128],     # road = 1
+#                           [244, 35, 232],     # sidewalk = 2
+#                           [70, 70, 70],       # building = 3
+#                           [102, 102, 156],    # wall = 4
+#                           [190, 153, 153],    # fence = 5
+#                           [153, 153, 153],    # pole = 6
+#                           [250, 170, 30],     # traffic light = 7
+#                           [220, 220, 0],      # traffic sign = 8
+#                           [107, 142, 35],     # vegetation = 9
+#                           [152, 251, 152],    # terrain = 10
+#                           [70, 130, 180],     # sky = 11
+#                           [220, 20, 60],      # pedestrian = 12
+#                           [255, 0, 0],        # rider = 13
+#                           [0, 0, 142],        # Car = 14
+#                           [0, 0, 70],         # truck = 15
+#                           [0, 60, 100],       # bs = 16
+#                           [0, 80, 100],       # train = 17
+#                           [0, 0, 230],        # motorcycle = 18
+#                           [119, 11, 32],      # bicycle = 19
+#                           # custom
+#                           [110, 190, 160],    # static = 20
+#                           [170, 120, 50],     # dynamic = 21
+#                           [55, 90, 80],       # other = 22
+#                           [45, 60, 150],      # water = 23
+#                           [157, 234, 50],     # road line = 24
+#                           [81, 0, 81],        # grond = 25
+#                           [150, 100, 100],    # bridge = 26
+#                           [230, 150, 140],    # rail track = 27
+#                           [180, 165, 180],    # gard rail = 28
 #                           ], dtype=np.uint8)
 
 LABEL_MAP = {
