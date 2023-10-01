@@ -218,10 +218,10 @@ class PointCloud(object):
     def restore_pcd_coor(self, range_depth):
         h, w = np.arange(0, self.H), np.arange(0, self.W)
         proj_w, proj_h = np.meshgrid(w, h)
-        valid = range_depth > 0
-        proj_w = proj_w.astype(float)[valid]
-        proj_h = proj_h.astype(float)[valid]
-        depth = range_depth[valid]
+        # valid = range_depth > 0
+        proj_w = proj_w.astype(float)[None, None, ...]
+        proj_h = proj_h.astype(float)[None, None, ...]
+        depth = range_depth
 
         proj_w /= self.W
         proj_h /= self.H
@@ -233,7 +233,7 @@ class PointCloud(object):
         x = depth_ * np.cos(yaw)
         y = depth_ * np.sin(yaw)
 
-        points = np.concatenate([x[:, None], -y[:, None], z[:, None]], axis=1)
-        points += self.lidar_position
-        points *= np.array([1, -1, 1])
-        return points
+        points = np.concatenate([x[..., None], -y[..., None], z[..., None]], axis=-1)
+        points += self.lidar_position.reshape((1, 1, 1, 1, -1))
+        points *= np.array([1, -1, 1]).reshape((1, 1, 1, 1, -1))
+        return np.concatenate([points, depth[..., None]], axis=-1)

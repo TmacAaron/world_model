@@ -7,6 +7,8 @@ import logging
 import cv2
 from PIL import Image
 from tqdm import tqdm
+import tempfile
+import shutil
 
 from data.dataset_utils import preprocess_birdview_and_routemap, binary_to_integer
 from constants import CARLA_FPS
@@ -40,6 +42,10 @@ class DataWriter:
         assert self._im_stack_idx[0] == -1, 'Not handled'
         self.save_birdview_label = save_birdview_label
         self.render_image = render_image
+
+        os.mkdir(self._dir_path)
+        self._tmp_dir = tempfile.mkdtemp(dir=self._dir_path)
+        print(f'tempdir: {self._tmp_dir}')
 
         self._data_list = []
 
@@ -126,7 +132,11 @@ class DataWriter:
         if weather is not None:
             data_dict['weather'] = self.convert_weather_to_dict(weather)
 
-        self._data_list.append(data_dict)
+        tmp = tempfile.NamedTemporaryFile(dir=self._tmp_dir, delete=False)
+        np.save(tmp, data_dict)
+        tmp.close()
+        self._data_list.append(tmp.name)
+        # self._data_list.append(data_dict)
 
         if self.render_image:
             # put text
@@ -191,7 +201,7 @@ class DataWriter:
         os.makedirs(os.path.join(self._dir_path, 'depth_semantic'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'birdview'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'routemap'), exist_ok=True)
-        os.makedirs(os.path.join(self._dir_path, 'points'), exist_ok=True)
+        # os.makedirs(os.path.join(self._dir_path, 'points'), exist_ok=True)
         os.makedirs(os.path.join(self._dir_path, 'points_semantic'), exist_ok=True)
 
         dict_dataframe = {
@@ -213,7 +223,7 @@ class DataWriter:
             # 'depth_semantic_trans': [],
             'birdview_path': [],
             'routemap_path': [],
-            'points_path': [],
+            # 'points_path': [],
             # 'point_cloud_multi_path': [],
             'points_semantic_path': [],
             'n_classes': [],  # Number of classes in the bev
@@ -230,7 +240,10 @@ class DataWriter:
 
         log.info(f'Saving {self._dir_path}, data_len={len(self._data_list)}')
 
-        for i, data in enumerate(tqdm(self._data_list, desc='Saving data')):
+        for i, data_name in enumerate(tqdm(self._data_list, desc='Saving data')):
+            data = np.load(data_name, allow_pickle=True).item()
+            os.remove(data_name)
+
             obs = data['obs']
             supervision = data['supervision']
 
@@ -326,3 +339,4 @@ class DataWriter:
         pd_dataframe.to_pickle(os.path.join(self._dir_path, 'pd_dataframe.pkl'))
 
         self._data_list.clear()
+        shutil.rmtree(self._tmp_dir)

@@ -149,7 +149,8 @@ class PreProcess(nn.Module):
                 )
 
         if self.cfg.LIDAR_RE.ENABLED:
-            batch['range_view_label_1'] = batch['range_view_pcd_xyzd'].float() / 100.0
+            batch['range_view_pcd_xyzd'] = batch['range_view_pcd_xyzd'].float() / self.cfg.LIDAR_RE.SCALE
+            batch['range_view_label_1'] = batch['range_view_pcd_xyzd']
             h, w = batch['range_view_label_1'].shape[-2:]
             for downsample_factor in [2, 4]:
                 size = h // downsample_factor, w // downsample_factor
@@ -157,7 +158,7 @@ class PreProcess(nn.Module):
                 batch[f'range_view_label_{downsample_factor}'] = functional_resize(
                     batch[f'range_view_label_{previous_label_factor}'],
                     size,
-                    mode=tvf.InterpolationMode.BILINEAR,
+                    mode=tvf.InterpolationMode.NEAREST,
                 )
 
         if self.cfg.LIDAR_SEG.ENABLED:

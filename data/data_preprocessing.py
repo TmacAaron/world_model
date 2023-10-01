@@ -183,28 +183,43 @@ def voxel_filter(pcd, sem, voxel_resolution, voxel_size, offset):
     h = hxyz[:, 0] + hxyz[:, 1] * Dx + hxyz[:, 2] * Dx * Dy
 
     # h_n = np.nonzero(np.bincount(h.astype(np.int32)))
-    h_idx = np.argsort(h)
+    h_idx = np.argsort(h)   # sort the h.
+    # h, hxyz, pcd_b, hmod are all arranged in ascending order according to the value of 'h'
     h, hxyz, sem_b, pcd_b, hmod = h[h_idx], hxyz[h_idx], sem_b[h_idx], pcd_b[h_idx], hmod[h_idx]
+    # Retrieve all unique values, 'h_n', in 'h' along with their 'indices'.
+    # i.e. Obtain all points residing within the same voxel grid.
     h_n, indices = np.unique(h, return_index=True)
-    n_f = h_n.shape[0]
-    n_all = h.shape[0]
-    voxels = np.zeros((n_f, 3), dtype=np.uint16)
-    semantics = np.zeros((n_f, ), dtype=np.uint8)
+    n_f = h_n.shape[0]  # number of filtered points (i.e. occupied voxel grids.)
+    n_all = h.shape[0]  # number of all points
+    voxels = np.zeros((n_f, 3), dtype=np.uint16)    # coordinates of occupied voxel grids.
+    semantics = np.zeros((n_f, ), dtype=np.uint8)   # labels of occupied voxel grids.
     # points_f = np.zeros((n_f, 3))
-    road_idx = np.where(LABEL_CLASS == 'roadlines')[0][0]
+    road_idx = np.where(LABEL_CLASS == 'roadlines')[0][0]   # label idx of 'roadline'
     # voxels = []
     # semantics = []
     # points_f = []
-    for i in range(n_f):
+    for i in range(n_f):    # for each filtered point. i.e. occupied voxel grid.
+
+        # Retrieve the indices of all points within 'h' (all original points)
+        # that are located in this voxel grid (sharing the same voxel grid as the filtered points).
         # idx_ = (h == h_n[i])
+
+        # the same as previous line.
+        # Since 'h' has been sorted beforehand, all points between indices[i] and indices[i+1] are in the same voxel grid.
         idx_ = np.arange(indices[i], indices[i+1]) if i < n_f - 1 else np.arange(indices[i], n_all)
+        # The distances from all points located in this voxel grid to the center of this voxel grid.
         dis = np.sum(hmod[idx_] ** 2, axis=1)
+        # The label of the nearest point is thus the label of this voxel grid.
+        # or absolutely you can choose the label that occurs most.
+        # 'roadline' is very thin and easily overlooked, so if this voxel grid contains 'roadline',
+        # then the label for this voxel grid is directly assigned as 'roadline'.
         semantic = sem_b[idx_][np.argmin(dis)] if not np.isin(sem_b[idx_], road_idx).any() else road_idx
         # semantic = np.bincount(sem_b.squeeze()[idx_]).argmax() if not np.isin(sem_b[idx_], road_idx).any() else road_idx
-        voxels[i] = hxyz[idx_][0]
+        voxels[i] = hxyz[idx_][0]   # get the coordinate of this voxel grid.
         semantics[i] = semantic
-        # points_f[i] = pcd_b[idx_].mean(axis=0) - center
-        # points_f[i][2] += center[2] / 2
+
+        # get the coordinates of filtered points. (not coordinate of voxels)
+        # points_f[i] = pcd_b[idx_].mean(axis=0) - offset
         # voxels.append(hxyz[idx_][0])
         # semantics.append(semantic)
         # points_f.append(pcd_b[idx_].mean(axis=0) - center)

@@ -4,7 +4,10 @@ code is taken from https://github.com/astra-vision/MonoScene/blob/master/monosce
 Part of the code is taken from https://github.com/waterljwant/SSC/blob/master/sscMetrics.py
 """
 import numpy as np
+import torch
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+from mile.losses import SSIMLoss, CDLoss
 
 
 def get_iou(iou_sum, cnt_class):
@@ -92,22 +95,27 @@ class SSCMetrics:
         self.fps += fp_sum
         self.fns += fn_sum
 
-    def get_stats(self):
+        self.compute()
+
+    def compute(self):
         if self.completion_tp != 0:
-            precision = self.completion_tp / (self.completion_tp + self.completion_fp)
-            recall = self.completion_tp / (self.completion_tp + self.completion_fn)
-            iou = self.completion_tp / (
-                self.completion_tp + self.completion_fp + self.completion_fn
+            self.precision = self.completion_tp / (self.completion_tp + self.completion_fp)
+            self.recall = self.completion_tp / (self.completion_tp + self.completion_fn)
+            self.iou = self.completion_tp / (
+                    self.completion_tp + self.completion_fp + self.completion_fn
             )
         else:
-            precision, recall, iou = 0, 0, 0
-        iou_ssc = self.tps / (self.tps + self.fps + self.fns + 1e-5)
+            self.precision, self.recall, self.iou = 0, 0, 0
+
+        self.iou_ssc = self.tps / (self.tps + self.fps + self.fns + 1e-5)
+
+    def get_stats(self):
         return {
-            "precision": precision,
-            "recall": recall,
-            "iou": iou,
-            "iou_ssc": iou_ssc,
-            "iou_ssc_mean": np.mean(iou_ssc[1:]),
+            "precision": self.precision,
+            "recall": self.recall,
+            "iou": self.iou,
+            "iou_ssc": self.iou_ssc,
+            "iou_ssc_mean": np.mean(self.iou_ssc[1:]),
         }
 
     def reset(self):
@@ -204,3 +212,45 @@ class SSCMetrics:
                 fn_sum[j] += fn
 
         return tp_sum, fp_sum, fn_sum
+
+
+class SSIMMetric:
+    def __init__(self, channel=3, window_size=11, sigma=1.5, L=1, non_negative=False):
+        self.ssim = SSIMLoss(channel=channel, window_size=window_size, sigma=sigma, L=L, non_negative=non_negative)
+        self.reset()
+
+    def add_batch(self, prediction, target):
+        self.count += 1
+        self.ssim_score += self.ssim(prediction, target)
+        self.ssim_avg = self.ssim_score / self.count
+
+    def get_stat(self):
+        return self.ssim_avg
+
+    def reset(self):
+        self.ssim_score = 0
+        self.count = 1e-8
+        self.ssim_avg = 0
+
+
+class CDMetric:
+    def __init__(self, reducer=torch.mean):
+        self.reducer = reducer
+        self.reset()
+
+    def add_batch(self, prediction, target):
+        self.count += 1
+        # dist = CDLoss.batch_pairwise_dist(prediction.float(), target.float()).cpu().numpy()
+        dist = torch.cdist(prediction.float(), target.float(), 2)
+        dl, dr = dist.min(1)[0], dist.min(2)[0]
+        cost = (self.reducer(dl, dim=1) + self.reducer(dr, dim=1)) / 2
+        self.total_cost += cost.mean()
+        self.avg_cost = self.total_cost / self.count
+
+    def get_stat(self):
+        return self.avg_cost
+
+    def reset(self):
+        self.total_cost = 0
+        self.count = 1e-8
+        self.avg_cost = 0

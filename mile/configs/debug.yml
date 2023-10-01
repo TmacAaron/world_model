@@ -6,12 +6,21 @@ TAG: 'debug'
 GPUS: 1
 BATCHSIZE: 1
 
-STEPS: 8
+STEPS: 4
 LOGGING_INTERVAL: 2
 LOG_VIDEO_INTERVAL: 4
 VAL_CHECK_INTERVAL: 4
 LIMIT_VAL_BATCHES: 2
 N_WORKERS: 0
+
+PREDICTION:
+  N_SAMPLES: 1
+
+OPTIMIZER:
+  ACCUMULATE_GRAD_BATCHES: 1
+
+SEMANTIC_SEG:
+  ENABLED: False
 
 VOXEL_SEG:
   ENABLED: False
@@ -25,7 +34,7 @@ LIDAR_SEG:
   USE_WEIGHTS: True
 
 LIDAR_RE:
-  ENABLED: False
+  ENABLED: True
 
 SEMANTIC_IMAGE:
   ENABLED: False
@@ -52,7 +61,9 @@ FUTURE_HORIZON: 6
 
 PRETRAINED:
 #  PATH: 'weights/epoch=37-step=57600.ckpt'
-  PATH: ''
+  PATH: 'weights/epoch=65-step=99000.ckpt'
+#  PATH: 'weights/epoch=65-step=99000_transformer.ckpt'
+#  PATH: ''
 #
 #DATASET:
 #  DATAROOT: ''

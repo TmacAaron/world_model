@@ -38,7 +38,7 @@ class SegmentationLoss(nn.Module):
 
         if self.poly_one:
             prob = torch.exp(-loss)
-            loss_poly_one = self.poly_one_coefficient * (1-prob)
+            loss_poly_one = self.poly_one_coefficient * (1 - prob)
             loss = loss + loss_poly_one
 
         loss = loss.view(b, s, -1)
@@ -101,6 +101,7 @@ class SpatialRegressionLoss(nn.Module):
 
 class ProbabilisticLoss(nn.Module):
     """ Given a prior distribution and a posterior distribution, this module computes KL(posterior, prior)"""
+
     def __init__(self, remove_first_timestamp=True):
         super().__init__()
         self.remove_first_timestamp = remove_first_timestamp
@@ -171,7 +172,7 @@ class VoxelLoss(nn.Module):
 
         if self.poly_one:
             prob = torch.exp(-loss)
-            loss_poly_one = self.poly_one_coefficient * (1-prob)
+            loss_poly_one = self.poly_one_coefficient * (1 - prob)
             loss = loss + loss_poly_one
 
         loss = loss.view(b, s, -1)
@@ -330,9 +331,33 @@ class SSIMLoss(nn.Module):
     def forward(self, prediction, target):
         b, s, c, h, w = prediction.shape
 
-        prediction = prediction.view(b*s, c, h, w)
-        target = target.view(b*s, c, h, w)
+        prediction = prediction.view(b * s, c, h, w)
+        target = target.view(b * s, c, h, w)
 
         loss = self._ssim(prediction, target)
         return loss.mean()
 
+
+class CDLoss(nn.Module):
+    def __init__(self, reducer=torch.mean):
+        super().__init__()
+        self.reducer = reducer
+
+    def forward(self, prediction, target):
+        b, s, n, d = prediction.shape
+
+        prediction = prediction.view(b * s, n, d)
+        target = target.view(b * s, n, d)
+        # dist = self.batch_pairwise_dist(prediction, target)
+        dist = torch.cdist(prediction.float(), target.float(), 2)
+        dl, dr = dist.min(1)[0], dist.min(2)[0]
+        loss = self.reducer(dl, dim=1) + self.reducer(dr, dim=1)
+        return loss.mean()
+
+    @staticmethod
+    def batch_pairwise_dist(x: torch.Tensor, y: torch.Tensor):
+        x_norm = torch.sum(x ** 2, dim=2, keepdim=True)
+        y_norm = torch.sum(y ** 2, dim=2, keepdim=True)
+        xy = torch.bmm(x, y.transpose(1, 2))
+        dist = x_norm - 2 * xy + y_norm.transpose(1, 2)
+        return dist

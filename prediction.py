@@ -10,6 +10,7 @@ import lightning.pytorch as pl
 from mile.config import get_parser, get_cfg
 from mile.data.dataset import DataModule
 from mile.trainer import WorldModelTrainer
+from lightning.pytorch.callbacks import ModelSummary
 
 from clearml import Task, Dataset, Model
 
@@ -37,19 +38,51 @@ def main():
     save_dir = os.path.join(
         cfg.LOG_DIR, time.strftime('%d%B%Yat%H:%M:%S%Z') + '_' + socket.gethostname() + '_' + cfg.TAG
     )
-    writer = SummaryWriter(log_dir=save_dir)
+    # writer = SummaryWriter(log_dir=save_dir)
+    #
+    # dataloader = data.predict_dataloader()
+    #
+    # pbar = tqdm(total=len(dataloader),  desc='Prediction')
+    # model.cuda()
+    #
+    # for i, data in enumerate(dataloader):
+    #     data = {key: value.cuda() for key, value in data.items()}
+    #     with torch.no_grad():
+    #         output, output_imagine = model.forward(data)
+    #         model.visualise(data, output, output_imagine, batch_idx=i, prefix='pred', writer=writer)
+    #     pbar.update(1)
 
-    dataloader = data.predict_dataloader()
+    callbacks = [
+        ModelSummary(),
+    ]
 
-    pbar = tqdm(total=len(dataloader),  desc='Prediction')
-    model.cuda()
+    logger = pl.loggers.TensorBoardLogger(save_dir=save_dir)
 
-    for i, data in enumerate(dataloader):
-        data = {key: value.cuda() for key, value in data.items()}
-        with torch.no_grad():
-            output, output_imagine = model.forward(data)
-            model.visualise(data, output, output_imagine, batch_idx=i, prefix='pred', writer=writer)
-        pbar.update(1)
+    if cfg.LIMIT_VAL_BATCHES in [0, 1]:
+        limit_val_batches = float(cfg.LIMIT_VAL_BATCHES)
+    else:
+        limit_val_batches = cfg.LIMIT_VAL_BATCHES
+
+    trainer = pl.Trainer(
+        # devices=cfg.GPUS,
+        accelerator='auto',
+        # strategy='ddp',
+        precision=cfg.PRECISION,
+        # sync_batchnorm=True,
+        max_epochs=None,
+        max_steps=cfg.STEPS,
+        callbacks=callbacks,
+        logger=logger,
+        log_every_n_steps=cfg.LOGGING_INTERVAL,
+        val_check_interval=cfg.VAL_CHECK_INTERVAL * cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
+        limit_val_batches=limit_val_batches,
+        # use_distributed_sampler=replace_sampler_ddp,
+        accumulate_grad_batches=cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
+        num_sanity_val_steps=2,
+        profiler='simple',
+    )
+
+    trainer.test(model, dataloaders=data.predict_dataloader())
 
 
 if __name__ == '__main__':

@@ -108,6 +108,7 @@ def main():
     )
 
     trainer.fit(model, datamodule=data)
+    trainer.test(model, dataloaders=data.predict_dataloader())
 
 
 if __name__ == '__main__':

@@ -370,7 +370,7 @@ class Mile(nn.Module):
         self.last_action = None
         self.count = 0
 
-    def forward(self, batch, deployment=False):
+    def forward(self, batch, deployment=False, predict_action=False):
         """
         Parameters
         ----------
@@ -462,7 +462,7 @@ class Mile(nn.Module):
         n_prediction_samples = self.cfg.PREDICTION.N_SAMPLES
         output_imagine = []
         for _ in range(n_prediction_samples):
-            output_imagine.append(self.imagine(state_imagine, future_horizon=fh))
+            output_imagine.append(self.imagine(state_imagine, predict_action=predict_action, future_horizon=fh))
         return output, output_imagine
 
     def encode(self, batch):

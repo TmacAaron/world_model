@@ -44,9 +44,9 @@ class DataModule(pl.LightningDataModule):
         print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
         print(f'{len(self.predict_dataset)} data points in prediction')
 
-        self.train_sampler = range(0, len(self.predict_dataset), 1)
-        self.val_sampler = None
-        self.predict_sampler = range(0, len(self.predict_dataset), 50)
+        self.train_sampler = None
+        self.val_sampler = range(0, len(self.train_dataset), 100)
+        self.predict_sampler = range(0, len(self.predict_dataset), 200)
 
     def train_dataloader(self):
         return DataLoader(
@@ -61,7 +61,7 @@ class DataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(
-            self.val_dataset,
+            self.train_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.cfg.N_WORKERS,

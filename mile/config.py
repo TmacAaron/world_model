@@ -241,6 +241,7 @@ _C.VOXEL_SEG.USE_WEIGHTS = True
 _C.LIDAR_RE = CN()
 _C.LIDAR_RE.ENABLED = True
 _C.LIDAR_RE.N_CHANNELS = 4
+_C.LIDAR_RE.SCALE = 50.0
 
 # lidar segmentation
 _C.LIDAR_SEG = CN()

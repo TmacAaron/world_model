@@ -214,6 +214,6 @@ class ObsManager(ObsManagerBase):
             self._point_list.colors = o3d.utility.Vector3dVector(int_color)
 
         self._points_queue.put((data.frame, {"points_xyz": points,
-                                             "CosAngel": np.array(point_cloud['CosAngle']),
-                                             "ObjIdx": np.array(point_cloud['ObjIdx']),
-                                             "ObjTag": np.array(point_cloud['ObjTag'])}))
+                                             # "CosAngel": np.array(point_cloud['CosAngle']),
+                                             # "ObjIdx": np.array(point_cloud['ObjIdx']),
+                                             "ObjTag": np.array(point_cloud['ObjTag'], dtype=np.uint8)}))
