@@ -62,9 +62,9 @@ class WorldModelTrainer(pl.LightningModule):
             self.metric_iou_val = JaccardIndex(
                 task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
             )
-            self.metric_iou_train = JaccardIndex(
-                task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
-            )
+            # self.metric_iou_train = JaccardIndex(
+            #     task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
+            # )
             self.metric_iou_test = JaccardIndex(
                 task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
             )
@@ -76,12 +76,13 @@ class WorldModelTrainer(pl.LightningModule):
             if self.cfg.LOSSES.SSIM:
                 self.ssim_loss = SSIMLoss(channel=3)
             self.ssim_metric_val = SSIMMetric(channel=3)
-            self.ssim_metric_train = SSIMMetric(channel=3)
+            # self.ssim_metric_train = SSIMMetric(channel=3)
             self.ssim_metric_test = SSIMMetric(channel=3)
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re_loss = SpatialRegressionLoss(norm=2)
-            self.lidar_cd_loss = CDLoss()
+            self.lidar_depth_loss = SpatialRegressionLoss(norm=1)
+            # self.lidar_cd_loss = CDLoss()
             self.pcd = PointCloud(
                 self.cfg.POINTS.CHANNELS,
                 self.cfg.POINTS.HORIZON_RESOLUTION,
@@ -118,7 +119,7 @@ class WorldModelTrainer(pl.LightningModule):
             )
             self.sem_scal_loss = SemScalLoss()
             self.geo_scal_loss = GeoScalLoss()
-            self.ssc_metrics_train = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
+            # self.ssc_metrics_train = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
             self.ssc_metrics_val = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
             self.ssc_metrics_test = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
 
@@ -227,10 +228,15 @@ class WorldModelTrainer(pl.LightningModule):
             for downsampling_factor in [1, 2, 4]:
                 discount = 1 / downsampling_factor
                 lidar_re_loss = self.lidar_re_loss(
-                    prediction=output_train[f'lidar_reconstruction_{downsampling_factor}'],
-                    target=batch[f'range_view_label_{downsampling_factor}'][:, :end_ind]
+                    prediction=output_train[f'lidar_reconstruction_{downsampling_factor}'][:, :, :3, :, :],
+                    target=batch[f'range_view_label_{downsampling_factor}'][:, :end_ind][:, :, :3, :, :]
+                )
+                lidar_depth_loss = self.lidar_depth_loss(
+                    prediction=output_train[f'lidar_reconstruction_{downsampling_factor}'][:, :, -1:, :, :],
+                    target=batch[f'range_view_label_{downsampling_factor}'][:, :end_ind][:, :, -1:, :, :]
                 )
                 losses[f'lidar_re_{downsampling_factor}'] = lidar_re_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_RE
+                losses[f'lidar_depth_{downsampling_factor}'] = lidar_depth_loss * discount * self.cfg.LOSSES.WEIGHT_LIDAR_RE
 
         if self.cfg.LIDAR_SEG.ENABLED:
             for downsampling_factor in [1, 2, 4]:
@@ -758,10 +764,10 @@ class WorldModelTrainer(pl.LightningModule):
         flow = cv2.calcOpticalFlowFarneback(img1, img2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
 
         hsv = np.zeros((*flow.shape[:2], 3), dtype=np.uint8)
-        hsv[..., 1] = 255
+        hsv[..., 2] = 255
         mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-        hsv[..., 0] = ang * 180 / np.pi / 2
-        hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+        hsv[..., 0] = ang * (180 / np.pi / 2)
+        hsv[..., 1] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
         color_coded_flow = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
         return torch.tensor(color_coded_flow.transpose(2, 0, 1), dtype=torch.float) / 255.0
 

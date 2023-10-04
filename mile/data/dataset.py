@@ -44,7 +44,7 @@ class DataModule(pl.LightningDataModule):
         print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
         print(f'{len(self.predict_dataset)} data points in prediction')
 
-        self.train_sampler = None
+        self.train_sampler = range(0, len(self.train_dataset))
         self.val_sampler = range(0, len(self.train_dataset), 100)
         self.predict_sampler = range(0, len(self.predict_dataset), 200)
 
