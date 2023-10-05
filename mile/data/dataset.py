@@ -44,8 +44,8 @@ class DataModule(pl.LightningDataModule):
         print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
         print(f'{len(self.predict_dataset)} data points in prediction')
 
-        self.train_sampler = range(0, len(self.train_dataset))
-        self.val_sampler = range(0, len(self.train_dataset), 100)
+        self.train_sampler = range(10, len(self.train_dataset))
+        self.val_sampler = range(20, len(self.train_dataset), 100)
         self.predict_sampler = range(0, len(self.predict_dataset), 200)
 
     def train_dataloader(self):
@@ -241,6 +241,14 @@ class CarlaDataset(Dataset):
                 [range_view_pcd_xyz, range_view_pcd_depth[..., None]], axis=-1).transpose((2, 0, 1))  # x y z d
         if self.cfg.LIDAR_SEG.ENABLED:
             single_element_t['range_view_pcd_seg'] = range_view_pcd_sem[None].astype(int)
+
+        if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
+            max_num_points = int(self.cfg.POINTS.N_PER_SECOND / CARLA_FPS)
+            fixed_points = np.empty((max_num_points, 3), dtype=np.float32)
+            num_points = min(points.shape[0], max_num_points)
+            fixed_points[:num_points] = points[:num_points]
+            single_element_t['points_raw'] = fixed_points
+            single_element_t['num_points'] = num_points
 
         # Load voxels
         if self.cfg.VOXEL_SEG.ENABLED:

@@ -14,7 +14,7 @@ from mile.losses import \
     CDLoss
 from mile.metrics import SSCMetrics, SSIMMetric, CDMetric
 from mile.models.preprocess import PreProcess
-from mile.utils.geometry_utils import PointCloud
+from mile.utils.geometry_utils import PointCloud, compute_pcd_transformation
 from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS, VOXEL_LABEL
 
 import matplotlib
@@ -602,17 +602,21 @@ class WorldModelTrainer(pl.LightningModule):
             name_ = f'{name}_lidar'
             writer.add_video(name_, visualisation_lidar, global_step=global_step, fps=2)
 
-            pcd_image_target, pcd_target = self.pcd_xy_image(lidar_target)
+            pcd_image_target, pcd_target, valid_target = self.pcd_xy_image(lidar_target)
             pcd_image_target = F.pad(pcd_image_target, [2, 2, 2, 2], 'constant', 0.2)
 
-            pcd_image_pred, pcd_pred = self.pcd_xy_image(lidar_pred)
+            pcd_image_pred, pcd_pred, valid_pred = self.pcd_xy_image(lidar_pred)
 
             pcd_image_preds = []
+            pcd_preds = []
+            valid_preds = []
             for i, lidar_imagine in enumerate(lidar_imagines):
-                pcd_image_imagine, pcd_imagine = self.pcd_xy_image(lidar_imagine)
-                pcd_receptive = pcd_image_pred if i == 0 else torch.ones_like(pcd_image_pred)
-                pcd_pred_imagine = torch.cat([pcd_receptive, pcd_image_imagine], dim=1)
+                pcd_image_imagine, pcd_imagine, valid_imagine = self.pcd_xy_image(lidar_imagine)
+                pcd_image_receptive = pcd_image_pred if i == 0 else torch.ones_like(pcd_image_pred)
+                pcd_pred_imagine = torch.cat([pcd_image_receptive, pcd_image_imagine], dim=1)
                 pcd_image_preds.append(F.pad(pcd_pred_imagine, [2, 2, 2, 2], 'constant', 0.2))
+                pcd_preds.append(np.concatenate([pcd_pred, pcd_imagine], axis=1))
+                valid_preds.append(np.concatenate([valid_pred, valid_imagine], axis=1))
 
             pcd_image = torch.cat([pcd_image_target, *pcd_image_preds], dim=-2)
             b, _, c, h, w = pcd_image.size()
@@ -626,6 +630,46 @@ class WorldModelTrainer(pl.LightningModule):
 
             name_ = f'{name}_pcd_xy'
             writer.add_images(name_, visualisation_pcd, global_step=global_step)
+
+            visualisation_traj = []
+            for bs in range(pcd_target.shape[0]):
+                path_target = [{'Rot': np.eye(3), 'pos': np.zeros((3, 1))}]
+                traj_target = np.pad(np.zeros((192, 192)), pad_width=2, mode='constant', constant_values=50)
+                traj_target = np.tile(traj_target[..., None], (1, 1, 3))
+                traj_target = self.plot_traj(path_target, traj_target)
+                path_preds = []
+                traj_preds = []
+                for i in range(len(pcd_preds)):
+                    path_pred = [{'Rot': np.eye(3), 'pos': np.zeros((3, 1))}]
+                    # traj_pred = np.pad(np.zeros((192, 192)), pad_width=2, mode='constant', constant_values=50)
+                    # traj_pred = np.tile(traj_pred[..., None], (1, 1, 3))
+                    # traj_pred = self.plot_traj(path_pred, traj_pred)
+                    path_preds.append(path_pred)
+                    traj_preds.append(traj_target.copy())
+                for step in range(1, pcd_target.shape[1]):
+                    pcd1 = pcd_target[bs, step - 1][valid_target[bs, step - 1]][:, :3]
+                    pcd2 = pcd_target[bs, step][valid_target[bs, step]][:, :3]
+                    _, Rt_target = compute_pcd_transformation(pcd1, pcd2, path_target[-1], threshold=5)
+                    path_target.append(Rt_target)
+                    traj_target = self.plot_traj(path_target, traj_target)
+
+                    for j in range(len(pcd_preds)):
+                        pcd1 = pcd_preds[j][bs, step - 1][valid_preds[j][bs, step - 1]][:, :3]
+                        pcd2 = pcd_preds[j][bs, step][valid_preds[j][bs, step]][:, :3]
+                        _, Rt_pred = compute_pcd_transformation(pcd1, pcd2, path_preds[j][-1], threshold=5)
+                        path_preds[j].append(Rt_pred)
+                        traj_preds[j] = self.plot_traj(path_preds[j], traj_preds[j])
+
+                traj = np.concatenate([traj_target, *traj_preds], axis=1).transpose((2, 0, 1))[None]
+                visualisation_traj.append(torch.tensor(traj, device=lidar_target.device, dtype=torch.float))
+            visualisation_traj = torch.cat(visualisation_traj, dim=0) / 255.0
+            name_ = f'{name}_traj'
+            writer.add_images(name_, visualisation_traj, global_step=global_step)
+
+                    # pcd1_pred = pcd_preds[0][bs, step - 1]
+                    # pcd2_pred = pcd_preds[0][bs, step]
+                    # _, Rt_pred = compute_pcd_transformation(pcd1_pred, pcd2_pred, path_pred[-1], threshold=5)
+                    # path_pred.append(Rt_pred)
 
             # if self.cml_logger is not None:
             #     name_ = f'{name}_pcd'
@@ -731,6 +775,17 @@ class WorldModelTrainer(pl.LightningModule):
         ax.set_axis_off()
         writer.add_figure(name, fig, global_step=global_step)
 
+    def plot_traj(self, traj, img):
+        x, y, z = traj[-1]['pos']
+        plot_x = int(96 - 5 * y)
+        plot_y = int(96 - 5 * x)
+        x_, y_, _ = traj[-2]['pos'] if len(traj) > 1 else traj[-1]['pos']
+        plot_x_ = int(96 - 5 * y_)
+        plot_y_ = int(96 - 5 * x_)
+        cv2.line(img, (plot_x, plot_y), (plot_x_, plot_y_), (20, 150, 20), 1)
+        cv2.circle(img, (plot_x, plot_y), 2, [150, 20, 20], -2, cv2.LINE_AA)
+        return img
+
     def pcd_xy_image(self, lidar):
         image_size = np.array([256, 256])
         lidar_range = 50
@@ -756,7 +811,7 @@ class WorldModelTrainer(pl.LightningModule):
                 hw = hw.astype(np.int32)
                 pcd_xy_image[i, j][tuple(hw.T)] = (1.0, 1.0, 1.0)
 
-        return torch.tensor(pcd_xy_image.transpose((0, 1, 4, 2, 3)), device=lidar.device), pcd
+        return torch.tensor(pcd_xy_image.transpose((0, 1, 4, 2, 3)), device=lidar.device), pcd, valid
     
     def get_color_coded_flow(self, img1, img2):
         img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)

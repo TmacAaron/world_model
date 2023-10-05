@@ -5,7 +5,7 @@ import timm
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
 from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, ConvDecoder, \
-    PositionEmbeddingSine, DecoderDS
+    PositionEmbeddingSine, DecoderDS, PointPillarNet
 from mile.models.frustum_pooling import FrustumPooling
 from mile.layers.layers import BasicBlock
 from mile.models.transition import RSSM
@@ -29,11 +29,27 @@ class Mile(nn.Module):
             self.feat_decoder = DecoderDS(feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
 
             if self.cfg.MODEL.LIDAR.ENABLED:
-                self.range_view_encoder = timm.create_model(
-                    cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-                )
-                range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-                self.range_view_decoder = DecoderDS(range_view_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+                if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
+                    self.point_pillars = PointPillarNet(
+                        num_input=8,
+                        num_features=[32, 32],
+                        min_x=-48,
+                        max_x=48,
+                        min_y=-48,
+                        max_y=48,
+                        pixels_per_meter=5)
+                    self.point_pillar_encoder = timm.create_model(
+                        cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=32
+                    )
+                    point_pillar_feature_info = \
+                        self.point_pillar_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+                    self.point_pillar_decoder = DecoderDS(point_pillar_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+                else:
+                    self.range_view_encoder = timm.create_model(
+                        cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+                    )
+                    range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+                    self.range_view_decoder = DecoderDS(range_view_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
 
             self.position_encode = PositionEmbeddingSine(
                 num_pos_feats=self.cfg.MODEL.TRANSFORMER.CHANNELS // 2,
@@ -224,12 +240,28 @@ class Mile(nn.Module):
                 # lidar_feature_info_xy = self.lidar_encoder_xy.feature_info.get_dicts(keys=['num_chs', 'reduction'])
                 # self.lidar_decoder_xy = Decoder(lidar_feature_info_xy, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
                 # backbone_bev_in_channels += self.cfg.MODEL.LIDAR.OUT_CHANNELS
-                self.range_view_encoder = timm.create_model(
-                    cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
-                )
-                range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-                self.range_view_decoder = Decoder(range_view_feature_info, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
-                self.range_view_state_conv = nn.Sequential(
+                if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
+                    self.point_pillars = PointPillarNet(
+                        num_input=8,
+                        num_features=[32, 32],
+                        min_x=-48,
+                        max_x=48,
+                        min_y=-48,
+                        max_y=48,
+                        pixels_per_meter=5)
+                    self.point_pillar_encoder = timm.create_model(
+                        cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=32
+                    )
+                    point_pillar_feature_info = \
+                        self.point_pillar_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+                    self.point_pillar_decoder = Decoder(point_pillar_feature_info, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+                else:
+                    self.range_view_encoder = timm.create_model(
+                        cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
+                    )
+                    range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
+                    self.range_view_decoder = Decoder(range_view_feature_info, self.cfg.MODEL.LIDAR.OUT_CHANNELS)
+                self.lidar_state_conv = nn.Sequential(
                     BasicBlock(self.cfg.MODEL.LIDAR.OUT_CHANNELS, embedding_n_channels, stride=2, downsample=True),
                     BasicBlock(embedding_n_channels, embedding_n_channels, stride=2, downsample=True),
                     nn.AdaptiveAvgPool2d(output_size=(1, 1)),
@@ -480,9 +512,16 @@ class Mile(nn.Module):
         x = self.feat_decoder(xs)
 
         if self.cfg.MODEL.TRANSFORMER.ENABLED:
-            range_view = pack_sequence_dim(batch['range_view_pcd_xyzd'])
-            lidar_xs = self.range_view_encoder(range_view)
-            lidar_features = self.range_view_decoder(lidar_xs)
+            if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
+                lidar_list = pack_sequence_dim(batch['points_raw'])
+                num_points = pack_sequence_dim(batch['num_points'])
+                pp_features = self.point_pillars(lidar_list, num_points)
+                pp_xs = self.point_pillar_encoder(pp_features)
+                lidar_features = self.point_pillar_decoder(pp_xs)
+            else:
+                range_view = pack_sequence_dim(batch['range_view_pcd_xyzd'])
+                lidar_xs = self.range_view_encoder(range_view)
+                lidar_features = self.range_view_decoder(lidar_xs)
             bs_image, _, h_image, w_image = x.shape
             bs_lidar, _, h_lidar, w_lidar = lidar_features.shape
 
@@ -589,10 +628,17 @@ class Mile(nn.Module):
                 # xs_lidar_xy = self.lidar_encoder_xy(points_histogram_xy)
                 # lidar_features_xy = self.lidar_decoder_xy(xs_lidar_xy)
                 # x = torch.cat([x, lidar_features_xy], dim=1)
-                range_view = pack_sequence_dim(batch['range_view_pcd_xyzd'])
-                lidar_xs = self.range_view_encoder(range_view)
-                lidar_features = self.range_view_decoder(lidar_xs)
-                lidar_embedding = self.range_view_state_conv(lidar_features)
+                if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
+                    lidar_list = pack_sequence_dim(batch['points_raw'])
+                    num_points = pack_sequence_dim(batch['num_points'])
+                    pp_features = self.point_pillars(lidar_list, num_points)
+                    pp_xs = self.point_pillar_encoder(pp_features)
+                    lidar_features = self.point_pillar_decoder(pp_xs)
+                else:
+                    range_view = pack_sequence_dim(batch['range_view_pcd_xyzd'])
+                    lidar_xs = self.range_view_encoder(range_view)
+                    lidar_features = self.range_view_decoder(lidar_xs)
+                lidar_embedding = self.lidar_state_conv(lidar_features)
                 # embedding = (lidar_embedding + embedding) / 2
                 embedding = self.embedding_combine(torch.cat([embedding, lidar_embedding], dim=-1))
 

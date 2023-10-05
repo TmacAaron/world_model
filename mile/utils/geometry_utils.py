@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import open3d as o3d
 from mile.data.dataset_utils import preprocess_gps
 
 
@@ -237,3 +238,22 @@ class PointCloud(object):
         points += self.lidar_position.reshape((1, 1, 1, 1, -1))
         points *= np.array([1, -1, 1]).reshape((1, 1, 1, 1, -1))
         return np.concatenate([points, depth[..., None]], axis=-1)
+
+
+def compute_pcd_transformation(pcd1, pcd2, Rt, threshold=0.02):
+    source = o3d.geometry.PointCloud()
+    source.points = o3d.utility.Vector3dVector(pcd2)
+    target = o3d.geometry.PointCloud()
+    target.points = o3d.utility.Vector3dVector(pcd1)
+    reg_p2p = o3d.pipelines.registration.registration_icp(
+        source, target, threshold, np.eye(4),
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=2000))
+    transformation = reg_p2p.transformation
+
+    R = transformation[:3, :3]
+    t = transformation[:3, -1:]
+    Rot = R @ Rt['Rot']
+    pos = Rt['pos'] + Rt['Rot'] @ t
+
+    return transformation, {'Rot': Rot, 'pos': pos}
