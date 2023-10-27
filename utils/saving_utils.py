@@ -43,7 +43,7 @@ class DataWriter:
         self.save_birdview_label = save_birdview_label
         self.render_image = render_image
 
-        os.mkdir(self._dir_path)
+        os.makedirs(self._dir_path, exist_ok=True)
         self._tmp_dir = tempfile.mkdtemp(dir=self._dir_path)
         print(f'tempdir: {self._tmp_dir}')
 
@@ -191,6 +191,9 @@ class DataWriter:
 
         if valid:
             self.save_files()
+
+        self._data_list.clear()
+        shutil.rmtree(self._tmp_dir)
         return valid
 
     def save_files(self):
@@ -338,5 +341,3 @@ class DataWriter:
         pd_dataframe = pd.DataFrame(dict_dataframe)
         pd_dataframe.to_pickle(os.path.join(self._dir_path, 'pd_dataframe.pkl'))
 
-        self._data_list.clear()
-        shutil.rmtree(self._tmp_dir)

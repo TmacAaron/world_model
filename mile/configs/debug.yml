@@ -6,10 +6,10 @@ TAG: 'debug'
 GPUS: 1
 BATCHSIZE: 1
 
-STEPS: 4
+STEPS: 8
 LOGGING_INTERVAL: 2
 LOG_VIDEO_INTERVAL: 2
-VAL_CHECK_INTERVAL: 4
+VAL_CHECK_INTERVAL: 3
 LIMIT_VAL_BATCHES: 2
 N_WORKERS: 0
 
@@ -20,7 +20,7 @@ OPTIMIZER:
   ACCUMULATE_GRAD_BATCHES: 1
 
 SEMANTIC_SEG:
-  ENABLED: False
+  ENABLED: True
 
 VOXEL_SEG:
   ENABLED: False
@@ -29,7 +29,7 @@ VOXEL_SEG:
   USE_WEIGHTS: True
 
 LIDAR_SEG:
-  ENABLED: False
+  ENABLED: True
   N_CLASSES: 9
   USE_WEIGHTS: True
 
@@ -51,10 +51,10 @@ LOSSES:
 MODEL:
   EMBEDDING_DIM: 512
   TRANSFORMER:
-    ENABLED: False
+    ENABLED: True
   LIDAR:
     POINT_PILLAR:
-      ENABLED: False
+      ENABLED: True
 
 EVAL:
   RGB_SUPERVISION: True
@@ -64,9 +64,9 @@ FUTURE_HORIZON: 6
 
 PRETRAINED:
 #  PATH: 'weights/epoch=37-step=57600.ckpt'
-  PATH: 'weights/epoch=65-step=99000.ckpt'
+#  PATH: 'weights/epoch=65-step=99000.ckpt'
 #  PATH: 'weights/epoch=65-step=99000_transformer.ckpt'
-#  PATH: ''
+  PATH: ''
 #
 #DATASET:
 #  DATAROOT: ''

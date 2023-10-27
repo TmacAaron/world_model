@@ -402,7 +402,7 @@ class Mile(nn.Module):
         self.last_action = None
         self.count = 0
 
-    def forward(self, batch, deployment=False, predict_action=False):
+    def forward(self, batch, deployment=False):
         """
         Parameters
         ----------
@@ -418,18 +418,16 @@ class Mile(nn.Module):
         """
         # Encode RGB images, route_map, speed using intrinsics and extrinsics
         # to a 512 dimensional vector
-        rf = self.cfg.RECEPTIVE_FIELD
-        fh = self.cfg.FUTURE_HORIZON
-        b, s = batch['image'][:, :rf].shape[:2]
-        embedding = self.encode({key: value[:, :rf] for key, value in batch.items()})  # dim (b, s, 512)
+        embedding = self.encode(batch)
+        b, s = batch['image'].shape[:2]
 
         output = dict()
         if self.cfg.MODEL.TRANSITION.ENABLED:
             # Recurrent state sequence module
             if deployment:
-                action = batch['action'][:, :rf]
+                action = batch['action']
             else:
-                action = torch.cat([batch['throttle_brake'][:, :rf], batch['steering'][:, :rf]], dim=-1)
+                action = torch.cat([batch['throttle_brake'], batch['steering']], dim=-1)
             state_dict = self.rssm(embedding, action, use_sample=not deployment, policy=self.policy)
 
             if deployment:
@@ -440,6 +438,7 @@ class Mile(nn.Module):
             state = torch.cat([state_dict['posterior']['hidden_state'], state_dict['posterior']['sample']], dim=-1)
         else:
             state = embedding
+            state_dict = {}
 
         state = pack_sequence_dim(state)
         output_policy = self.policy(state)
@@ -487,15 +486,15 @@ class Mile(nn.Module):
             voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, s)
             output = {**output, **voxel_decoder_output}
 
-        state_imagine = {'hidden_state': state_dict['posterior']['hidden_state'][:, -1],
-                         'sample': state_dict['posterior']['sample'][:, -1],
-                         'throttle_brake': batch['throttle_brake'][:, rf:],
-                         'steering': batch['steering'][:, rf:]}
-        n_prediction_samples = self.cfg.PREDICTION.N_SAMPLES
-        output_imagine = []
-        for _ in range(n_prediction_samples):
-            output_imagine.append(self.imagine(state_imagine, predict_action=predict_action, future_horizon=fh))
-        return output, output_imagine
+        # state_imagine = {'hidden_state': state_dict['posterior']['hidden_state'][:, -1],
+        #                  'sample': state_dict['posterior']['sample'][:, -1],
+        #                  'throttle_brake': batch['throttle_brake'][:, end_idx:],
+        #                  'steering': batch['steering'][:, end_idx:]}
+        # n_prediction_samples = self.cfg.PREDICTION.N_SAMPLES
+        # output_imagine = []
+        # for _ in range(n_prediction_samples):
+        #     output_imagine.append(self.imagine(state_imagine, predict_action=predict_action, future_horizon=fh))
+        return output, state_dict
 
     def encode(self, batch):
         b, s = batch['image'].shape[:2]
@@ -783,6 +782,10 @@ class Mile(nn.Module):
             output_imagine[k] = torch.stack(v, dim=1)
 
         state = pack_sequence_dim(output_imagine['state'])
+        output_policy = self.policy(state)
+        throttle_brake, steering = torch.split(output_policy, 1, dim=-1)
+        output_imagine['throttle_brake'] = unpack_sequence_dim(throttle_brake, b, future_horizon)
+        output_imagine['steering'] = unpack_sequence_dim(steering, b, future_horizon)
 
         if self.cfg.SEMANTIC_SEG.ENABLED:
             bev_decoder_output = self.bev_decoder(state)

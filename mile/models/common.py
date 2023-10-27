@@ -109,7 +109,7 @@ class DecoderDS(nn.Module):
             nn.ReLU(True),
         )
 
-        self.upsample_skip_convs = nn.ModuleList(
+        self.downsample_skip_convs = nn.ModuleList(
             nn.Sequential(
                 nn.Conv2d(feature_info[i]['num_chs'], out_channels, 3, 1, 1, bias=False),
                 nn.BatchNorm2d(out_channels),
@@ -123,7 +123,7 @@ class DecoderDS(nn.Module):
     def forward(self, xs: List[Tensor]) -> Tensor:
         x = self.conv1(xs[0])
 
-        for i, conv in enumerate(self.upsample_skip_convs):
+        for i, conv in enumerate(self.downsample_skip_convs):
             stride = xs[i].shape[-1] // xs[i + 1].shape[-1]
             x = conv(xs[i + 1]) + F.max_pool2d(x, stride)   # avg_pool?
 

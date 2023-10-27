@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import open3d as o3d
+import cv2
 from mile.data.dataset_utils import preprocess_gps
 
 
@@ -257,3 +258,93 @@ def compute_pcd_transformation(pcd1, pcd2, Rt, threshold=0.02):
     pos = Rt['pos'] + Rt['Rot'] @ t
 
     return transformation, {'Rot': Rot, 'pos': pos}
+
+#
+# def find_motion_optimized(img1, img2):
+#     # 转换为灰度图
+#     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+#     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+#
+#     # 使用ORB找到关键点和描述符
+#     orb = cv2.ORB_create()
+#     kp1, des1 = orb.detectAndCompute(gray1, None)
+#     kp2, des2 = orb.detectAndCompute(gray2, None)
+#
+#     # 使用BFMatcher进行描述符匹配
+#     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+#     matches = bf.match(des1, des2)
+#
+#     # 按距离排序
+#     matches = sorted(matches, key=lambda x: x.distance)
+#
+#     # 选择最佳匹配
+#     good_matches = matches[:int(len(matches) * 0.15)]  # 取前15%的匹配点
+#
+#     # 获取匹配点的坐标
+#     src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+#     dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+#
+#     # 计算基础矩阵并使用RANSAC进行鲁棒估计
+#     F, mask = cv2.findFundamentalMat(src_pts, dst_pts, cv2.FM_RANSAC, 3, 0.99)
+#
+#     # 选择仅在内部点上操作的点
+#     src_pts = src_pts[mask.ravel() == 1]
+#     dst_pts = dst_pts[mask.ravel() == 1]
+#
+#     # 计算相机的旋转和平移
+#     _, R, t, _ = cv2.recoverPose(F, src_pts, dst_pts)
+#
+#     pts1, pts2 = src_pts, dst_pts
+#     P1 = np.hstack((np.eye(3), np.zeros((3, 1))))  # 第一相机的投影矩阵
+#     P2 = np.hstack((R, t))  # 第二相机的投影矩阵
+#
+#     # 使用线性三角测量方法获取3D点
+#     points_3D = cv2.triangulatePoints(P1, P2, pts1.T, pts2.T).T
+#     points_3D /= points_3D[:, 3, None]  # 归一化齐次坐标
+#
+#     # Step 3: Bundle Adjustment
+#     # 假设你已经定义了optimize_with_bundle_adjustment函数
+#     camera_params = np.hstack((cv2.Rodrigues(R)[0], t))  # 将旋转矩阵转换为旋转向量
+#     optimized_3D_points, optimized_camera_params = optimize_with_bundle_adjustment(
+#         points_3D[:, :3],
+#         np.array([np.zeros(6), camera_params]),  # 初始相机参数
+#         np.array([pts1, pts2])  # 观测到的2D点
+#     )
+#
+#     optimized_rot_vector = optimized_camera_params[1, :3]
+#     optimized_t = optimized_camera_params[1, 3:]
+#
+#     # 使用cv2.Rodrigues()将旋转向量转换为旋转矩阵
+#     optimized_R, _ = cv2.Rodrigues(optimized_rot_vector)
+#
+#     return optimized_R, optimized_t
+#
+#
+# class BundleAdjustmentProblem(cv2.optim.SimpleBundleAdjuster):
+#     def __init__(self, _3D_points, camera_params, _2D_points):
+#         super(BundleAdjustmentProblem, self).__init__()
+#
+#         # 添加3D点
+#         for point in _3D_points:
+#             self.addPoint(point)
+#
+#         # 添加相机参数和2D点
+#         for cam_param, points_2D in zip(camera_params, _2D_points):
+#             rvec, tvec = cam_param[:3], cam_param[3:]
+#             for point_2D in points_2D:
+#                 self.addCamera(rvec, tvec, point_2D)
+#
+#         # 设置相机内参（例如，焦距）
+#         self.setFocalLength(800)  # 假设焦距为800
+#
+#
+# # 使用Bundle Adjustment优化3D点和相机参数
+# def optimize_with_bundle_adjustment(_3D_points, camera_params, _2D_points):
+#     ba_problem = BundleAdjustmentProblem(_3D_points, camera_params, _2D_points)
+#     ba_problem.run(100)  # 设置最大迭代次数
+#
+#     # 获取优化后的3D点和相机参数
+#     optimized_3D_points = np.array([ba_problem.getPoint(i) for i in range(len(_3D_points))])
+#     optimized_camera_params = np.array([ba_problem.getCameraParams(i) for i in range(len(camera_params))])
+#
+#     return optimized_3D_points, optimized_camera_params

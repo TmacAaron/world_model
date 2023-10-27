@@ -26,26 +26,40 @@ class DataModule(pl.LightningDataModule):
         self.dataset_root = dataset_root if dataset_root else self.cfg.DATASET.DATAROOT
 
         # Will be populated with self.setup()
-        self.train_dataset, self.val_dataset = None, None
+        self.train_dataset, self.val_dataset_0, self.val_dataset_1, self.val_dataset_2 = None, None, None, None
         self.predict_dataset = None
 
     def setup(self, stage=None):
         self.train_dataset = CarlaDataset(
             self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
-        self.val_dataset = CarlaDataset(
-            self.cfg, mode='val', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        # self.val_dataset = CarlaDataset(
+        #     self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        # )
+        self.val_dataset_0 = CarlaDataset(
+            self.cfg, mode='val0', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        )
+        self.val_dataset_1 = CarlaDataset(
+            self.cfg, mode='val1', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        )
+        self.val_dataset_2 = CarlaDataset(
+            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.predict_dataset = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
 
         print(f'{len(self.train_dataset)} data points in {self.train_dataset.dataset_path}')
-        print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
+        # print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
+        print(f'{len(self.val_dataset_0)} data points in {self.val_dataset.dataset_path}')
+        print(f'{len(self.val_dataset_1)} data points in {self.val_dataset.dataset_path}')
+        print(f'{len(self.val_dataset_2)} data points in {self.val_dataset.dataset_path}')
         print(f'{len(self.predict_dataset)} data points in prediction')
 
-        self.train_sampler = range(10, len(self.train_dataset))
-        self.val_sampler = range(20, len(self.train_dataset), 100)
+        # self.train_sampler = range(10, len(self.train_dataset))
+        self.train_sampler = None
+        self.val_sampler = range(0, len(self.val_dataset_2), 50)
+        # self.val_sampler = None
         self.predict_sampler = range(0, len(self.predict_dataset), 200)
 
     def train_dataloader(self):
@@ -61,7 +75,7 @@ class DataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(
-            self.train_dataset,
+            self.val_dataset_2,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.cfg.N_WORKERS,

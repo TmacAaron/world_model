@@ -172,6 +172,7 @@ def get_all_points(depth, semantic, fov=90, size=(320, 320), offset=(10, 10, 10)
 def voxel_filter(pcd, sem, voxel_resolution, voxel_size, offset):
     voxel_size = np.asarray(voxel_size)
     offset = np.asarray(offset)
+    voxel_resolution = np.asarray(voxel_resolution)
     offset += voxel_resolution * voxel_size / 2
     pcd_b = pcd + offset
     idx = ((0 <= pcd_b) & (pcd_b < voxel_size * voxel_resolution)).all(axis=1)

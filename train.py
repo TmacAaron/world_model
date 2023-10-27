@@ -100,15 +100,17 @@ def main():
         logger=logger,
         log_every_n_steps=cfg.LOGGING_INTERVAL,
         val_check_interval=cfg.VAL_CHECK_INTERVAL * cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
-        limit_val_batches=limit_val_batches,
+        check_val_every_n_epoch=None,
+        # limit_val_batches=limit_val_batches,
+        limit_val_batches=0.001,
         # use_distributed_sampler=replace_sampler_ddp,
         accumulate_grad_batches=cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
-        num_sanity_val_steps=2,
+        num_sanity_val_steps=0,
         profiler='simple',
     )
 
     trainer.fit(model, datamodule=data)
-    trainer.test(model, dataloaders=data.predict_dataloader())
+    # trainer.test(model, dataloaders=data.predict_dataloader())
 
 
 if __name__ == '__main__':
