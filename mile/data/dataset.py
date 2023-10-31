@@ -27,7 +27,7 @@ class DataModule(pl.LightningDataModule):
 
         # Will be populated with self.setup()
         self.train_dataset, self.val_dataset_0, self.val_dataset_1, self.val_dataset_2 = None, None, None, None
-        self.predict_dataset = None
+        self.test_dataset = None
 
     def setup(self, stage=None):
         self.train_dataset = CarlaDataset(
@@ -37,30 +37,34 @@ class DataModule(pl.LightningDataModule):
         #     self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         # )
         self.val_dataset_0 = CarlaDataset(
-            self.cfg, mode='val0', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_1 = CarlaDataset(
-            self.cfg, mode='val1', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_2 = CarlaDataset(
-            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
-        self.predict_dataset = CarlaDataset(
-            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        self.test_dataset = CarlaDataset(
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
 
         print(f'{len(self.train_dataset)} data points in {self.train_dataset.dataset_path}')
         # print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
-        print(f'{len(self.val_dataset_0)} data points in {self.val_dataset.dataset_path}')
-        print(f'{len(self.val_dataset_1)} data points in {self.val_dataset.dataset_path}')
-        print(f'{len(self.val_dataset_2)} data points in {self.val_dataset.dataset_path}')
-        print(f'{len(self.predict_dataset)} data points in prediction')
+        print(f'{len(self.val_dataset_0)} data points in {self.val_dataset_0.dataset_path}')
+        print(f'{len(self.val_dataset_1)} data points in {self.val_dataset_1.dataset_path}')
+        print(f'{len(self.val_dataset_2)} data points in {self.val_dataset_2.dataset_path}')
+        print(f'{len(self.test_dataset)} data points in prediction')
 
         # self.train_sampler = range(10, len(self.train_dataset))
         self.train_sampler = None
-        self.val_sampler = range(0, len(self.val_dataset_2), 50)
+        self.val_sampler_0 = range(0, len(self.val_dataset_0), 50)
+        self.val_sampler_1 = range(1500, len(self.val_dataset_1), 50)
+        self.val_sampler_2 = range(3000, len(self.val_dataset_2), 50)
         # self.val_sampler = None
-        self.predict_sampler = range(0, len(self.predict_dataset), 200)
+        self.test_sampler_0 = range(0, len(self.test_dataset), 900)
+        self.test_sampler_1 = range(1500, len(self.test_dataset), 600)
+        self.test_sampler_2 = range(3000, len(self.test_dataset), 300)
 
     def train_dataloader(self):
         return DataLoader(
@@ -74,26 +78,66 @@ class DataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset_2,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.cfg.N_WORKERS,
-            pin_memory=True,
-            drop_last=True,
-            sampler=self.val_sampler,
-        )
+        return [
+            DataLoader(
+                self.val_dataset_0,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.val_sampler_0,
+            ),
+            DataLoader(
+                self.val_dataset_1,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.val_sampler_1,
+            ),
+            DataLoader(
+                self.val_dataset_2,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.val_sampler_2,
+            ),
+        ]
 
-    def predict_dataloader(self):
-        return DataLoader(
-            self.predict_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.cfg.N_WORKERS,
-            pin_memory=True,
-            drop_last=True,
-            sampler=self.predict_sampler,
-        )
+    def test_dataloader(self):
+        return [
+            DataLoader(
+                self.test_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.test_sampler_0,
+        ),
+            DataLoader(
+                self.test_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.test_sampler_1,
+            ),
+            DataLoader(
+                self.test_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.test_sampler_2,
+            ),
+        ]
 
 
 class CarlaDataset(Dataset):
@@ -135,7 +179,7 @@ class CarlaDataset(Dataset):
 
         n_filtered_run = 0
         for run, data_run in self.data.items():
-            # Calculate normalised reward of the run
+            #  Calculate normalised reward of the run
             run_length = len(data_run['reward'])
             cumulative_reward = data_run['reward'].sum()
             normalised_reward = cumulative_reward / run_length

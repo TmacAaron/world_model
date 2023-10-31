@@ -10,9 +10,8 @@ from torchmetrics import JaccardIndex
 from mile.config import get_cfg
 from mile.models.mile import Mile
 from mile.losses import \
-    SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss, SemScalLoss, GeoScalLoss, \
-    CDLoss
-from mile.metrics import SSCMetrics, SSIMMetric, CDMetric
+    SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss, SemScalLoss, GeoScalLoss
+from mile.metrics import SSCMetrics, SSIMMetric, CDMetric, PSNRMetric
 from mile.models.preprocess import PreProcess
 from mile.utils.geometry_utils import PointCloud, compute_pcd_transformation
 from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS, VOXEL_LABEL
@@ -44,6 +43,17 @@ class WorldModelTrainer(pl.LightningModule):
         self.model = Mile(self.cfg)
         self.load_pretrained_weights()
 
+        # self.metrics_vals = [dict() for _ in range(len(self.val_dataloader()))]
+        # self.metrics_vals_imagine = [dict() for _ in range(len(self.val_dataloader()))]
+        # self.metrics_tests = [dict() for _ in range(len(self.test_dataloader()))]
+        # self.metrics_tests_imagine = [dict() for _ in range(len(self.test_dataloader()))]
+        # self.metrics_train = dict()
+        self.metrics_vals = [{}, {}, {}]
+        self.metrics_vals_imagine = [{}, {}, {}]
+        self.metrics_tests = [{}, {}, {}]
+        self.metrics_tests_imagine = [{}, {}, {}]
+        self.metrics_train = dict()
+
         # Losses
         self.action_loss = RegressionLoss(norm=1)
         if self.cfg.MODEL.TRANSITION.ENABLED:
@@ -60,15 +70,25 @@ class WorldModelTrainer(pl.LightningModule):
             self.center_loss = SpatialRegressionLoss(norm=2)
             self.offset_loss = SpatialRegressionLoss(norm=1, ignore_index=self.cfg.INSTANCE_SEG.IGNORE_INDEX)
 
-            self.metric_iou_val = JaccardIndex(
-                task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
-            )
-            # self.metric_iou_train = JaccardIndex(
+            for metrics_val, metrics_val_imagine in zip(self.metrics_vals, self.metrics_vals_imagine):
+                metrics_val['iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
+                )
+                metrics_val_imagine['iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
+                )
+
+            for metrics_test, metrics_test_imagine in zip(self.metrics_tests, self.metrics_tests_imagine):
+                metrics_test['iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
+                )
+                metrics_test_imagine['iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
+                )
+
+            # self.metrics_train['iou'] = JaccardIndex(
             #     task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
             # )
-            self.metric_iou_test = JaccardIndex(
-                task='multiclass', num_classes=self.cfg.SEMANTIC_SEG.N_CHANNELS, average='none',
-            )
 
         if self.cfg.EVAL.RGB_SUPERVISION:
             self.rgb_loss = SpatialRegressionLoss(norm=1)
@@ -76,9 +96,19 @@ class WorldModelTrainer(pl.LightningModule):
                 self.rgb_instance_loss = SpatialRegressionLoss(norm=1)
             if self.cfg.LOSSES.SSIM:
                 self.ssim_loss = SSIMLoss(channel=3)
-            self.ssim_metric_val = SSIMMetric(channel=3)
-            # self.ssim_metric_train = SSIMMetric(channel=3)
-            self.ssim_metric_test = SSIMMetric(channel=3)
+
+            for metrics_val, metrics_val_imagine in zip(self.metrics_vals, self.metrics_vals_imagine):
+                metrics_val['ssim'] = SSIMMetric(channel=3)
+                metrics_val_imagine['ssim'] = SSIMMetric(channel=3)
+                metrics_val['psnr'] = PSNRMetric(max_pixel_val=1.0)
+                metrics_val_imagine['psnr'] = PSNRMetric(max_pixel_val=1.0)
+            for metrics_test, metrics_test_imagine in zip(self.metrics_tests, self.metrics_tests_imagine):
+                metrics_test['ssim'] = SSIMMetric(channel=3)
+                metrics_test_imagine['ssim'] = SSIMMetric(channel=3)
+                metrics_test['psnr'] = PSNRMetric(max_pixel_val=1.0)
+                metrics_test_imagine['psnr'] = PSNRMetric(max_pixel_val=1.0)
+            # self.metrics_train['ssim'] = SSIMMetric(channel=3)
+            # self.metrics_train['psnr'] = PSNRMetric(max_pixel_val=1.0)
 
         if self.cfg.LIDAR_RE.ENABLED:
             self.lidar_re_loss = SpatialRegressionLoss(norm=2)
@@ -90,8 +120,14 @@ class WorldModelTrainer(pl.LightningModule):
                 *self.cfg.POINTS.FOV,
                 self.cfg.POINTS.LIDAR_POSITION
             )
-            self.cd_metric_test = CDMetric()
-            self.cd_metric_val = CDMetric()
+
+            for metrics_val, metrics_val_imagine in zip(self.metrics_vals, self.metrics_vals_imagine):
+                metrics_val['cd'] = CDMetric()
+                metrics_val_imagine['cd'] = CDMetric()
+            for metrics_test, metrics_test_imagine in zip(self.metrics_tests, self.metrics_tests_imagine):
+                metrics_test['cd'] = CDMetric()
+                metrics_test_imagine['cd'] = CDMetric()
+            # self.metrics_train['cd'] = CDMetric()
 
         if self.cfg.LIDAR_SEG.ENABLED:
             self.lidar_seg_loss = SegmentationLoss(
@@ -120,9 +156,13 @@ class WorldModelTrainer(pl.LightningModule):
             )
             self.sem_scal_loss = SemScalLoss()
             self.geo_scal_loss = GeoScalLoss()
-            # self.ssc_metrics_train = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
-            self.ssc_metrics_val = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
-            self.ssc_metrics_test = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
+            for metrics_val, metrics_val_imagine in zip(self.metrics_vals, self.metrics_vals_imagine):
+                metrics_val['ssc'] = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
+                metrics_val_imagine['ssc'] = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
+            for metrics_test, metrics_test_imagine in zip(self.metrics_tests, self.metrics_tests_imagine):
+                metrics_test['ssc'] = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
+                metrics_test_imagine['ssc'] = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
+            # self.metrics_train['ssc'] = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
 
     def get_cml_logger(self, cml_logger):
         self.cml_logger = cml_logger
@@ -148,7 +188,7 @@ class WorldModelTrainer(pl.LightningModule):
         output = self.model.deployment_forward(batch, is_dreaming)
         return output
 
-    def shared_step(self, batch, mode='train'):
+    def shared_step(self, batch, mode='train', predict_action=False):
         n_prediction_samples = self.cfg.PREDICTION.N_SAMPLES
         output_imagines = []
         losses_imagines = []
@@ -168,7 +208,7 @@ class WorldModelTrainer(pl.LightningModule):
                              'throttle_brake': batch['throttle_brake'][:, self.rf:],
                              'steering': batch['steering'][:, self.rf:]}
             for _ in range(n_prediction_samples):
-                output_imagine = self.model.imagine(state_imagine, predict_action=False, future_horizon=self.fh)
+                output_imagine = self.model.imagine(state_imagine, predict_action=predict_action, future_horizon=self.fh)
                 output_imagines.append(output_imagine)
                 losses_imagines.append(self.compute_loss(batch_fh, output_imagine))
 
@@ -314,15 +354,6 @@ class WorldModelTrainer(pl.LightningModule):
             losses['reward'] = self.cfg.LOSSES.WEIGHT_REWARD * reward_loss
         return losses
 
-    def compute_ssc_metrics(self, batch, output, metric):
-        y_true = batch['voxel_label_1'][:, :self.rf].cpu().numpy()
-        y_pred = output['voxel_1'].detach().cpu().numpy()
-        b, s, c, x, y, z = y_pred.shape
-        y_pred = y_pred.reshape(b * s, c, x, y, z)
-        y_true = y_true.reshape(b * s, x, y, z)
-        y_pred = np.argmax(y_pred, axis=1)
-        metric.add_batch(y_pred, y_true)
-
     def training_step(self, batch, batch_idx):
         if batch_idx == self.cfg.STEPS // 2 and self.cfg.MODEL.TRANSITION.ENABLED:
             print('!' * 50)
@@ -331,53 +362,72 @@ class WorldModelTrainer(pl.LightningModule):
             self.model.rssm.active_inference = True
         losses, output, _, _ = self.shared_step(batch, mode='train')
 
-        # if self.cfg.VOXEL_SEG.ENABLED:
-        #     self.compute_ssc_metrics(batch, output, self.ssc_metrics_train)
-            # self.ssc_metrics_train.get_stats()
-
         self.logging_and_visualisation(batch, output, [], losses, None, batch_idx, prefix='train')
 
         return self.loss_reducing(losses)
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx):
         self.train()
         for module in self.modules():
             if isinstance(module, torch.nn.Dropout):
                 module.eval()
         with torch.no_grad():
-            loss, output, loss_imagines, output_imagines = self.shared_step(batch, mode='val')
+            loss, output, loss_imagines, output_imagines = self.shared_step(batch, mode='val', predict_action=False)
         self.eval()
 
+        batch_rf = {key: value[:, :self.rf] for key, value in batch.items()}  # dim (b, s, 512)
+        batch_fh = {key: value[:, self.rf:] for key, value in batch.items()}  # dim (b, s, 512)
+        self.add_metrics(self.metrics_vals[dataloader_idx], batch_rf, output)
+        for output_imagine in output_imagines:
+            self.add_metrics(self.metrics_vals_imagine[dataloader_idx], batch_fh, output_imagine)
+
+        self.logging_and_visualisation(batch, output, output_imagines, loss, loss_imagines,
+                                       batch_idx, prefix=f'val{dataloader_idx}')
+
+        return {f'val{dataloader_idx}_loss': self.loss_reducing(loss),
+                f'val{dataloader_idx}_loss_imagine':
+                    sum([self.loss_reducing(loss_imagine) for loss_imagine in loss_imagines]) / len(loss_imagines)}
+
+    def add_metrics(self, metrics, batch, output):
         if self.cfg.SEMANTIC_SEG.ENABLED:
             seg_prediction = output['bev_segmentation_1'].detach()
             seg_prediction = torch.argmax(seg_prediction, dim=2)
-            self.metric_iou_val(
-                seg_prediction.view(-1),
-                batch['birdview_label'][:, :self.rf].view(-1)
+            metrics['iou'](
+                seg_prediction.view(-1).cpu(),
+                batch['birdview_label'].view(-1).cpu()
             )
 
         if self.cfg.EVAL.RGB_SUPERVISION:
-            self.ssim_metric_val.add_batch(
+            metrics['ssim'].add_batch(
                 prediction=output[f'rgb_1'].detach(),
-                target=batch[f'rgb_label_1'][:, :self.rf],
+                target=batch[f'rgb_label_1'],
+            )
+            metrics['psnr'].add_batch(
+                prediction=output[f'rgb_1'].detach(),
+                target=batch[f'rgb_label_1'],
             )
 
         if self.cfg.LIDAR_RE.ENABLED:
-            lidar_target = batch['range_view_label_1'][:, :self.rf]
+            lidar_target = batch['range_view_label_1']
             lidar_pred = output['lidar_reconstruction_1'].detach()
-            pcd_target = lidar_target.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0,
-                                                                                                  1) * self.cfg.LIDAR_RE.SCALE
-            pcd_pred = lidar_pred.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0,
-                                                                                              1) * self.cfg.LIDAR_RE.SCALE
+            pcd_target = lidar_target.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
+                         * self.cfg.LIDAR_RE.SCALE
+            pcd_pred = lidar_pred.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
+                       * self.cfg.LIDAR_RE.SCALE
             index = np.random.randint(0, pcd_target.size(-2), 1000)
-            self.cd_metric_val.add_batch(pcd_pred[:, index, :-1], pcd_target[:, index, :-1])
+            metrics['cd'].add_batch(pcd_pred[:, index, :-1], pcd_target[:, index, :-1])
 
         if self.cfg.VOXEL_SEG.ENABLED:
-            self.compute_ssc_metrics(batch, output, self.ssc_metrics_val)
+            self.compute_ssc_metrics(batch, output, metrics['ssc'])
 
-        self.logging_and_visualisation(batch, output, output_imagines, loss, loss_imagines, batch_idx, prefix='val')
-
-        return {'val_loss': self.loss_reducing(loss), 'val_loss_imagine': self.loss_reducing(loss_imagines[0])}
+    def compute_ssc_metrics(self, batch, output, metric):
+        y_true = batch['voxel_label_1'].cpu().numpy()
+        y_pred = output['voxel_1'].detach().cpu().numpy()
+        b, s, c, x, y, z = y_pred.shape
+        y_pred = y_pred.reshape(b * s, c, x, y, z)
+        y_true = y_true.reshape(b * s, x, y, z)
+        y_pred = np.argmax(y_pred, axis=1)
+        metric.add_batch(y_pred, y_true)
 
     def logging_and_visualisation(self, batch, output, output_imagine, loss, loss_imagines, batch_idx, prefix='train'):
         # Logging
@@ -401,7 +451,7 @@ class WorldModelTrainer(pl.LightningModule):
                                      & (self.global_step != self.vis_step)
             self.vis_step = self.global_step
         else:
-            visualisation_criteria = batch_idx == 0
+            visualisation_criteria = batch_idx < 2
         if visualisation_criteria:
             self.visualise(batch, output, output_imagine, batch_idx, prefix=prefix)
 
@@ -410,38 +460,44 @@ class WorldModelTrainer(pl.LightningModule):
         return total_loss
 
     def on_validation_epoch_end(self):
+        self.log_metrics(self.metrics_vals, 'val')
+        self.log_metrics(self.metrics_vals_imagine, 'val_imagine')
+
+    def log_metrics(self, metrics_list, metrics_type):
         class_names = ['Background', 'Road', 'Lane marking', 'Vehicle', 'Pedestrian', 'Green light', 'Yellow light',
                        'Red light and stop sign']
-        if self.cfg.SEMANTIC_SEG.ENABLED:
-            scores = self.metric_iou_val.compute()
-            for key, value in zip(class_names, scores):
-                self.logger.experiment.add_scalar('val_iou_' + key, value, global_step=self.global_step)
-            self.logger.experiment.add_scalar('val_mean_iou', torch.mean(scores), global_step=self.global_step)
-            self.metric_iou_val.reset()
+        for idx, metrics in enumerate(metrics_list):
+            prefix = f'{metrics_type}{idx}'
+            if self.cfg.SEMANTIC_SEG.ENABLED:
+                scores = metrics['iou'].compute()
+                for key, value in zip(class_names, scores):
+                    self.logger.experiment.add_scalar(f'{prefix}_iou_' + key, value, global_step=self.global_step)
+                self.logger.experiment.add_scalar(f'{prefix}_mean_iou', torch.mean(scores), global_step=self.global_step)
+                metrics['iou'].reset()
 
-        if self.cfg.EVAL.RGB_SUPERVISION:
-            self.log(f'val_ssim', self.ssim_metric_val.get_stat())
-            self.ssim_metric_val.reset()
+            if self.cfg.EVAL.RGB_SUPERVISION:
+                self.log(f'{prefix}_ssim', metrics['ssim'].get_stat())
+                metrics['ssim'].reset()
+                self.log(f'{prefix}_psnr', metrics['psnr'].get_stat())
+                metrics['psnr'].reset()
 
-        if self.cfg.LIDAR_RE.ENABLED:
-            self.log(f'val_chamfer_distance', self.cd_metric_val.get_stat())
-            self.cd_metric_val.reset()
+            if self.cfg.LIDAR_RE.ENABLED:
+                self.log(f'{prefix}_chamfer_distance', metrics['cd'].get_stat())
+                metrics['cd'].reset()
 
-        if self.cfg.VOXEL_SEG.ENABLED:
-            # class_names_voxel = ['Background', 'Road', 'RoadLines', 'Sidewalk', 'Vehicle',
-            #                      'Pedestrian', 'TrafficSign', 'TrafficLight', 'Others']
-            class_names_voxel = list(VOXEL_LABEL.values())
-            metric_list = [("train", self.ssc_metrics_train), ("val", self.ssc_metrics_val)]
+            if self.cfg.VOXEL_SEG.ENABLED:
+                # class_names_voxel = ['Background', 'Road', 'RoadLines', 'Sidewalk', 'Vehicle',
+                #                      'Pedestrian', 'TrafficSign', 'TrafficLight', 'Others']
+                class_names_voxel = list(VOXEL_LABEL.values())
 
-            for prefix, metric in metric_list:
-                stats = metric.get_stats()
+                stats = metrics['ssc'].get_stats()
                 for i, class_name in enumerate(class_names_voxel):
                     self.log(f'{prefix}_Voxel_{class_name}_SemIoU', stats['iou_ssc'][i])
                 self.log(f'{prefix}_Voxel_mIoU', stats["iou_ssc_mean"])
                 self.log(f'{prefix}_Voxel_IoU', stats["iou"])
                 self.log(f'{prefix}_Voxel_Precision', stats["precision"])
                 self.log(f'{prefix}_Voxel_Recall', stats["recall"])
-                metric.reset()
+                metrics['ssc'].reset()
 
     def visualise(self, batch, output, output_imagines, batch_idx, prefix='train', writer=None):
         writer = writer if writer else self.logger.experiment
@@ -449,7 +505,7 @@ class WorldModelTrainer(pl.LightningModule):
         rf = list(output.values())[-1].shape[1]
 
         name = f'{prefix}_outputs'
-        if prefix == 'val' or prefix == 'pred':
+        if prefix != 'train':
             name = name + f'_{batch_idx}'
         # global_step = batch_idx if prefix == 'pred' else self.global_step
         global_step = self.global_step
@@ -915,74 +971,23 @@ class WorldModelTrainer(pl.LightningModule):
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
     def on_test_epoch_end(self):
-        class_names = ['Background', 'Road', 'Lane marking', 'Vehicle', 'Pedestrian', 'Green light', 'Yellow light',
-                       'Red light and stop sign']
-        if self.cfg.SEMANTIC_SEG.ENABLED:
-            scores = self.metric_iou_test.compute()
-            for key, value in zip(class_names, scores):
-                self.log('pred_iou_' + key, value)
-            self.log('pred_mean_iou', torch.mean(scores))
-            self.metric_iou_test.reset()
+        self.log_metrics(self.metrics_tests, 'test')
+        self.log_metrics(self.metrics_tests_imagine, 'test_imagine')
 
-        if self.cfg.EVAL.RGB_SUPERVISION:
-            self.log(f'pred_ssim', self.ssim_metric_test.get_stat())
-            self.ssim_metric_test.reset()
-
-        if self.cfg.LIDAR_RE.ENABLED:
-            self.log(f'pred_chamfer_distance', self.cd_metric_test.get_stat())
-            self.cd_metric_test.reset()
-
-        if self.cfg.VOXEL_SEG.ENABLED:
-            # class_names_voxel = ['Background', 'Road', 'RoadLines', 'Sidewalk', 'Vehicle',
-            #                      'Pedestrian', 'TrafficSign', 'TrafficLight', 'Others']
-            class_names_voxel = list(VOXEL_LABEL.values())
-            metric_list = [("pred", self.ssc_metrics_test)]
-
-            for prefix, metric in metric_list:
-                stats = metric.get_stats()
-                for i, class_name in enumerate(class_names_voxel):
-                    self.log(f'{prefix}_Voxel_{class_name}_SemIoU', stats['iou_ssc'][i])
-                self.log(f'{prefix}_Voxel_mIoU', stats["iou_ssc_mean"])
-                self.log(f'{prefix}_Voxel_IoU', stats["iou"])
-                self.log(f'{prefix}_Voxel_Precision', stats["precision"])
-                self.log(f'{prefix}_Voxel_Recall', stats["recall"])
-                metric.reset()
-
-    def test_step(self, batch, batch_idx, predict_action=False):
+    def test_step(self, batch, batch_idx, dataloader_idx):
         self.train()
         for module in self.modules():
             if isinstance(module, torch.nn.Dropout):
                 module.eval()
         with torch.no_grad():
-            output, output_imagine = self.forward(batch, predict_action=predict_action)
+            loss, output, loss_imagines, output_imagines = self.shared_step(batch, mode='test', predict_action=False)
         self.eval()
 
-        if self.cfg.EVAL.RGB_SUPERVISION:
-            self.ssim_metric_test.add_batch(
-                prediction=output[f'rgb_1'].detach(),
-                target=batch[f'rgb_label_1'][:, :self.rf],
-            )
+        batch_rf = {key: value[:, :self.rf] for key, value in batch.items()}  # dim (b, s, 512)
+        batch_fh = {key: value[:, self.rf:] for key, value in batch.items()}  # dim (b, s, 512)
+        self.add_metrics(self.metrics_tests[dataloader_idx], batch_rf, output)
+        for output_imagine in output_imagines:
+            self.add_metrics(self.metrics_tests_imagine[dataloader_idx], batch_fh, output_imagine)
 
-        if self.cfg.SEMANTIC_SEG.ENABLED:
-            seg_prediction = output['bev_segmentation_1'].detach()
-            seg_prediction = torch.argmax(seg_prediction, dim=2)
-            self.metric_iou_test(
-                seg_prediction.view(-1),
-                batch['birdview_label'][:, :self.rf].view(-1)
-            )
-
-        if self.cfg.LIDAR_RE.ENABLED:
-            lidar_target = batch['range_view_label_1'][:, :self.rf]
-            lidar_pred = output['lidar_reconstruction_1'].detach()
-            pcd_target = lidar_target.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0,
-                                                                                                  1) * self.cfg.LIDAR_RE.SCALE
-            pcd_pred = lidar_pred.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0,
-                                                                                              1) * self.cfg.LIDAR_RE.SCALE
-            index = np.random.randint(0, pcd_target.size(-2), 1000)
-            self.cd_metric_test.add_batch(pcd_pred[:, index, :-1], pcd_target[:, index, :-1])
-
-        if self.cfg.VOXEL_SEG.ENABLED:
-            self.compute_ssc_metrics(batch, output, self.ssc_metrics_test)
-
-        self.visualise(batch, output, output_imagine, batch_idx, prefix='pred')
-        return output, output_imagine
+        self.visualise(batch, output, output_imagines, batch_idx, prefix=f'pred{dataloader_idx}')
+        return output, output_imagines

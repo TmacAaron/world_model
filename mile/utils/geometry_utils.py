@@ -242,15 +242,18 @@ class PointCloud(object):
 
 
 def compute_pcd_transformation(pcd1, pcd2, Rt, threshold=0.02):
-    source = o3d.geometry.PointCloud()
-    source.points = o3d.utility.Vector3dVector(pcd2)
-    target = o3d.geometry.PointCloud()
-    target.points = o3d.utility.Vector3dVector(pcd1)
-    reg_p2p = o3d.pipelines.registration.registration_icp(
-        source, target, threshold, np.eye(4),
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=2000))
-    transformation = reg_p2p.transformation
+    if len(pcd1) > 0 and len(pcd2) > 0:
+        source = o3d.geometry.PointCloud()
+        source.points = o3d.utility.Vector3dVector(pcd2)
+        target = o3d.geometry.PointCloud()
+        target.points = o3d.utility.Vector3dVector(pcd1)
+        reg_p2p = o3d.pipelines.registration.registration_icp(
+            source, target, threshold, np.eye(4),
+            o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+            o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=2000))
+        transformation = reg_p2p.transformation
+    else:
+        transformation = np.eye(4)
 
     R = transformation[:3, :3]
     t = transformation[:3, -1:]

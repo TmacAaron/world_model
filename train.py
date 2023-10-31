@@ -52,9 +52,9 @@ def main():
     args = get_parser().parse_args()
     cfg = get_cfg(args)
 
-    # task = Task.init(project_name=cfg.CML_PROJECT, task_name=cfg.CML_TASK, task_type=cfg.CML_TYPE, tags=cfg.TAG)
-    # task.connect(cfg)
-    # cml_logger = task.get_logger()
+    task = Task.init(project_name=cfg.CML_PROJECT, task_name=cfg.CML_TASK, task_type=cfg.CML_TYPE, tags=cfg.TAG)
+    task.connect(cfg)
+    cml_logger = task.get_logger()
     #
     # dataset_root = Dataset.get(dataset_project=cfg.CML_PROJECT,
     #                            dataset_name=cfg.CML_DATASET,
@@ -65,7 +65,7 @@ def main():
 
     input_model = Model(model_id='').get_local_copy() if cfg.PRETRAINED.CML_MODEL else None
     model = WorldModelTrainer(cfg.convert_to_dict(), pretrained_path=input_model)
-    # model.get_cml_logger(cml_logger)
+    model.get_cml_logger(cml_logger)
 
     save_dir = os.path.join(
         cfg.LOG_DIR, time.strftime('%d%B%Yat%H:%M:%S%Z') + '_' + socket.gethostname() + '_' + cfg.TAG
@@ -102,15 +102,15 @@ def main():
         val_check_interval=cfg.VAL_CHECK_INTERVAL * cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
         check_val_every_n_epoch=None,
         # limit_val_batches=limit_val_batches,
-        limit_val_batches=0.001,
+        limit_val_batches=3,
         # use_distributed_sampler=replace_sampler_ddp,
         accumulate_grad_batches=cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=2,
         profiler='simple',
     )
 
     trainer.fit(model, datamodule=data)
-    # trainer.test(model, dataloaders=data.predict_dataloader())
+    trainer.test(model, dataloaders=data.test_dataloader())
 
 
 if __name__ == '__main__':

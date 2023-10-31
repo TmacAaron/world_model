@@ -82,7 +82,7 @@ def main():
         profiler='simple',
     )
 
-    trainer.test(model, dataloaders=data.predict_dataloader())
+    trainer.test(model, dataloaders=data.test_dataloader())
 
 
 if __name__ == '__main__':

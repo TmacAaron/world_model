@@ -254,3 +254,28 @@ class CDMetric:
         self.total_cost = 0
         self.count = 1e-8
         self.avg_cost = 0
+
+
+class PSNRMetric:
+    def __init__(self, max_pixel_val=1.0):
+        self.max_pixel_value = max_pixel_val
+        self.reset()
+
+    def add_batch(self, prediction, target):
+        self.count += 1
+        self.total_psnr += self.psnr(prediction, target).mean()
+        self.avg_psnr = self.total_psnr / self.count
+
+    def psnr(self, prediction, target):
+        # b, s, c, h, w
+        mse = torch.mean((prediction - target) ** 2, dim=(2, 3, 4))
+        psnr = 20 * torch.log10(self.max_pixel_value / torch.sqrt(mse))
+        return psnr
+
+    def get_stat(self):
+        return self.avg_psnr
+
+    def reset(self):
+        self.total_psnr = 0
+        self.count = 1e-8
+        self.avg_psnr = 0
