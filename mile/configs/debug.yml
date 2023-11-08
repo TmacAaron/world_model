@@ -52,6 +52,8 @@ MODEL:
   EMBEDDING_DIM: 512
   TRANSFORMER:
     ENABLED: True
+    BEV: True
+    LARGE: True
   LIDAR:
     POINT_PILLAR:
       ENABLED: True

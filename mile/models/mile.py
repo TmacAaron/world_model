@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import timm
 
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from mile.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
 from mile.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, ConvDecoder, \
-    PositionEmbeddingSine, DecoderDS, PointPillarNet
+    PositionEmbeddingSine, DecoderDS, PointPillarNet, DownSampleConv
 from mile.models.frustum_pooling import FrustumPooling
 from mile.layers.layers import BasicBlock
 from mile.models.transition import RSSM
@@ -26,7 +27,33 @@ class Mile(nn.Module):
             feature_info = self.encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
 
         if self.cfg.MODEL.TRANSFORMER.ENABLED:
-            self.feat_decoder = DecoderDS(feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+            DecoderT = Decoder if self.cfg.MODEL.TRANSFORMER.LARGE else DecoderDS
+            self.feat_decoder = DecoderT(feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+            if self.cfg.MODEL.TRANSFORMER.BEV:
+                self.feat_decoder = Decoder(feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+                # Frustum pooling
+                bev_downsample = cfg.BEV.FEATURE_DOWNSAMPLE
+                self.frustum_pooling = FrustumPooling(
+                    size=(cfg.BEV.SIZE[0] // bev_downsample, cfg.BEV.SIZE[1] // bev_downsample),
+                    scale=cfg.BEV.RESOLUTION * bev_downsample,
+                    offsetx=cfg.BEV.OFFSET_FORWARD / bev_downsample,
+                    dbound=cfg.BEV.FRUSTUM_POOL.D_BOUND,
+                    downsample=8,
+                )
+
+                # mono depth head
+                self.depth_decoder = Decoder(feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+                self.depth = nn.Conv2d(self.depth_decoder.out_channels, self.frustum_pooling.D, kernel_size=1)
+                # only lift argmax of depth distribution for speed
+                self.sparse_depth = cfg.BEV.FRUSTUM_POOL.SPARSE
+                self.sparse_depth_count = cfg.BEV.FRUSTUM_POOL.SPARSE_COUNT
+                if not self.cfg.MODEL.TRANSFORMER.LARGE:
+                    self.bev_down_sample_4 = nn.MaxPool2d(4)
+                    # bev_out_channels = self.cfg.MODEL.TRANSFORMER.CHANNELS
+                    # self.bev_down_sample_4 = nn.Sequential(
+                    #     DownSampleConv(bev_out_channels, bev_out_channels, 512),
+                    #     DownSampleConv(bev_out_channels, bev_out_channels, 512),
+                    # )
 
             if self.cfg.MODEL.LIDAR.ENABLED:
                 if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
@@ -43,13 +70,13 @@ class Mile(nn.Module):
                     )
                     point_pillar_feature_info = \
                         self.point_pillar_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-                    self.point_pillar_decoder = DecoderDS(point_pillar_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+                    self.point_pillar_decoder = DecoderT(point_pillar_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
                 else:
                     self.range_view_encoder = timm.create_model(
                         cfg.MODEL.LIDAR.ENCODER, pretrained=True, features_only=True, out_indices=[2, 3, 4], in_chans=4
                     )
                     range_view_feature_info = self.range_view_encoder.feature_info.get_dicts(keys=['num_chs', 'reduction'])
-                    self.range_view_decoder = DecoderDS(range_view_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+                    self.range_view_decoder = DecoderT(range_view_feature_info, self.cfg.MODEL.TRANSFORMER.CHANNELS)
 
             self.position_encode = PositionEmbeddingSine(
                 num_pos_feats=self.cfg.MODEL.TRANSFORMER.CHANNELS // 2,
@@ -511,6 +538,27 @@ class Mile(nn.Module):
         x = self.feat_decoder(xs)
 
         if self.cfg.MODEL.TRANSFORMER.ENABLED:
+            if self.cfg.MODEL.TRANSFORMER.BEV:
+                # Depth distribution
+                depth = self.depth(self.depth_decoder(xs)).softmax(dim=1)
+
+                if self.sparse_depth:
+                    # only lift depth for topk most likely depth bins
+                    topk_bins = depth.topk(self.sparse_depth_count, dim=1)[1]
+                    depth_mask = torch.zeros(depth.shape, device=depth.device, dtype=torch.bool)
+                    depth_mask.scatter_(1, topk_bins, 1)
+                else:
+                    depth_mask = torch.zeros(0, device=depth.device)
+                x = (depth.unsqueeze(1) * x.unsqueeze(2)).type_as(x)  # outer product
+
+                #  Add camera dimension
+                x = x.unsqueeze(1)
+                x = x.permute(0, 1, 3, 4, 5, 2)
+
+                x = self.frustum_pooling(x, intrinsics.unsqueeze(1), extrinsics.unsqueeze(1), depth_mask)
+                if not self.cfg.MODEL.TRANSFORMER.LARGE:
+                    x = self.bev_down_sample_4(x)
+
             if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
                 lidar_list = pack_sequence_dim(batch['points_raw'])
                 num_points = pack_sequence_dim(batch['num_points'])
