@@ -18,6 +18,9 @@ PREDICTION:
 
 OPTIMIZER:
   ACCUMULATE_GRAD_BATCHES: 1
+  FROZEN:
+    ENABLED: False
+    TRAIN_LIST: ['bev_decoder', 'lidar_re']
 
 SEMANTIC_SEG:
   ENABLED: True

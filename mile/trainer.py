@@ -932,6 +932,11 @@ class WorldModelTrainer(pl.LightningModule):
         return torch.tensor(color_coded_flow.transpose(2, 0, 1), dtype=torch.float) / 255.0
 
     def configure_optimizers(self):
+        def frozen_params(model, no_frozen_list=[]):
+            for name, param in model.named_parameters():
+                if not any(name.startswith(layer) for layer in no_frozen_list):
+                    param.requires_grad = False
+
         #  Do not decay batch norm parameters and biases
         # https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994/2
         def add_weight_decay(model, weight_decay=0.01, skip_list=[]):
@@ -948,6 +953,9 @@ class WorldModelTrainer(pl.LightningModule):
                 {'params': no_decay, 'weight_decay': 0.},
                 {'params': decay, 'weight_decay': weight_decay},
             ]
+
+        if self.cfg.OPTIMIZER.FROZEN.ENABLED:
+            frozen_params(self.model, self.cfg.OPTIMIZER.FROZEN.TRAIN_LIST)
 
         parameters = add_weight_decay(
             self.model,
