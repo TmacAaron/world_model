@@ -23,10 +23,10 @@ SEMANTIC_SEG:
   ENABLED: False
 
 VOXEL_SEG:
-  ENABLED: False
-  DIMENSION: 32
-  N_CLASSES: 9
-  USE_WEIGHTS: True
+  ENABLED: True
+  DIMENSION: 64
+  N_CLASSES: 2
+  USE_WEIGHTS: False
 
 LIDAR_RE:
   ENABLED: True
@@ -51,18 +51,18 @@ LOSSES:
 MODEL:
   EMBEDDING_DIM: 512
   TRANSFORMER:
-    ENABLED: False
+    ENABLED: True
 
 EVAL:
   RGB_SUPERVISION: True
 
-RECEPTIVE_FIELD: 6
+RECEPTIVE_FIELD: 1
 FUTURE_HORIZON: 6
 
 PRETRAINED:
 #  PATH: 'weights/epoch=37-step=57600.ckpt'
 #  PATH: 'weights/epoch=65-step=99000_transformer.ckpt'
-  PATH: 'weights/epoch=65-step=99000.ckpt'
+  PATH: 'weights/epoch=3-step=50000.ckpt'
 
 #DATASET:
 #  DATAROOT: ''

@@ -20,16 +20,16 @@ OPTIMIZER:
   ACCUMULATE_GRAD_BATCHES: 1
   FROZEN:
     ENABLED: False
-    TRAIN_LIST: ['bev_decoder', 'lidar_re']
+    TRAIN_LIST: ['bev_decoder', 'voxel_decoder']
 
 SEMANTIC_SEG:
-  ENABLED: True
+  ENABLED: False
 
 VOXEL_SEG:
-  ENABLED: False
-  DIMENSION: 32
-  N_CLASSES: 9
-  USE_WEIGHTS: True
+  ENABLED: True
+  DIMENSION: 64
+  N_CLASSES: 2
+  USE_WEIGHTS: False
 
 LIDAR_SEG:
   ENABLED: False
@@ -54,18 +54,18 @@ LOSSES:
 MODEL:
   EMBEDDING_DIM: 512
   TRANSFORMER:
-    ENABLED: True
-    BEV: True
-    LARGE: True
+    ENABLED: False
+    BEV: False
+    LARGE: False
   LIDAR:
     POINT_PILLAR:
-      ENABLED: True
+      ENABLED: False
 
 EVAL:
   RGB_SUPERVISION: True
 
-RECEPTIVE_FIELD: 3
-FUTURE_HORIZON: 3
+RECEPTIVE_FIELD: 2
+FUTURE_HORIZON: 1
 
 PRETRAINED:
 #  PATH: 'weights/epoch=37-step=57600.ckpt'

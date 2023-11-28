@@ -948,3 +948,123 @@ class Mile(nn.Module):
             output = {**output, **bev_decoder_output}
 
         return output
+
+    def sim_forward(self, batch, is_dreaming):
+        """
+        Keep latent states in memory for fast inference.
+
+        Parameters
+        ----------
+            batch: dict of torch.Tensor
+                keys:
+                    image: (b, s, 3, h, w)
+                    route_map: (b, s, 3, h_r, w_r)
+                    speed: (b, s, 1)
+                    intrinsics: (b, s, 3, 3)
+                    extrinsics: (b, s, 4, 4)
+                    throttle_brake: (b, s, 1)
+                    steering: (b, s, 1)
+        """
+        assert self.cfg.MODEL.TRANSITION.ENABLED
+        b = batch['image'].shape[0]
+
+        if self.count == 0:
+            # Encode RGB images, route_map, speed using intrinsics and extrinsics
+            # to a 512 dimensional vector
+            s = self.receptive_field
+            batch = remove_past(batch, s)
+            # action_t = batch['action'][:, 0]  # action from t-1 to t
+            action_t = torch.cat([batch['throttle_brake'][:, 0], batch['steering'][:, 0]], dim=-1)
+            embedding_t = self.encode({key: value[:, :1] for key, value in batch.items()})[:, -1]  # dim (b, 1, 512)
+
+            if self.last_action is None:
+                action_last = torch.zeros_like(action_t)
+            else:
+                action_last = self.last_action
+
+            # Recurrent state sequence module
+            if self.last_h is None:
+                h_t = action_t.new_zeros(b, self.cfg.MODEL.TRANSITION.HIDDEN_STATE_DIM)
+                sample_t = action_t.new_zeros(b, self.cfg.MODEL.TRANSITION.STATE_DIM)
+            else:
+                h_t = self.last_h
+                sample_t = self.last_sample
+
+            if is_dreaming:
+                rssm_output = self.rssm.imagine_step(
+                    h_t, sample_t, action_last, use_sample=False, policy=self.policy,
+                )
+            else:
+                rssm_output = self.rssm.observe_step(
+                    h_t, sample_t, action_last, embedding_t, use_sample=False, policy=self.policy,
+                )['posterior']
+            sample_t = rssm_output['sample']
+            h_t = rssm_output['hidden_state']
+
+            self.last_h = h_t
+            self.last_sample = sample_t
+            self.last_action = action_t
+
+            game_frequency = CARLA_FPS
+            model_stride_sec = self.cfg.DATASET.STRIDE_SEC
+            n_image_per_stride = int(game_frequency * model_stride_sec)
+            self.count = n_image_per_stride - 1
+        else:
+            self.count -= 1
+        s = 1
+        state = torch.cat([self.last_h, self.last_sample], dim=-1)
+        output_policy = self.policy(state)
+        throttle_brake, steering = torch.split(output_policy, 1, dim=-1)
+        output = dict()
+        output['throttle_brake'] = unpack_sequence_dim(throttle_brake, b, s)
+        output['steering'] = unpack_sequence_dim(steering, b, s)
+
+        output['hidden_state'] = self.last_h
+        output['sample'] = self.last_sample
+
+        if self.cfg.SEMANTIC_SEG.ENABLED and DISPLAY_SEGMENTATION:
+            bev_decoder_output = self.bev_decoder(state)
+            bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, s)
+            output = {**output, **bev_decoder_output}
+
+        if self.cfg.EVAL.RGB_SUPERVISION:
+            rgb_decoder_output = self.rgb_decoder(state)
+            rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, s)
+            output = {**output, **rgb_decoder_output}
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            lidar_output = self.lidar_re(state)
+            lidar_output = unpack_sequence_dim(lidar_output, b, s)
+            output = {**output, **lidar_output}
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            lidar_seg_output = self.lidar_segmentation(state)
+            lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, s)
+            output = {**output, **lidar_seg_output}
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            sem_image_output = self.sem_image_decoder(state)
+            sem_image_output = unpack_sequence_dim(sem_image_output, b, s)
+            output = {**output, **sem_image_output}
+
+        if self.cfg.DEPTH.ENABLED:
+            depth_image_output = self.depth_image_decoder(state)
+            depth_image_output = unpack_sequence_dim(depth_image_output, b, s)
+            output = {**output, **depth_image_output}
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            # voxel_feature_xy = self.voxel_feature_xy_decoder(state)
+            # voxel_feature_xz = self.voxel_feature_xz_decoder(state)
+            # voxel_feature_yz = self.voxel_feature_yz_decoder(state)
+            # voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
+            voxel_decoder_output = self.voxel_decoder(state)
+            voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, s)
+            output = {**output, **voxel_decoder_output}
+
+        state_imagine = {'hidden_state': self.last_h,
+                         'sample': self.last_sample,
+                         'throttle_brake': batch['throttle_brake'],
+                         'steering': batch['steering']}
+        output_imagine = self.imagine(state_imagine, predict_action=False, future_horizon=batch['image'].shape[1] - 1)
+
+        return output, output_imagine

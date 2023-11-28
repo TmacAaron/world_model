@@ -137,6 +137,22 @@ class WorldModelTrainer(pl.LightningModule):
                 is_bev=False,
             )
 
+            for metrics_val, metrics_val_imagine in zip(self.metrics_vals, self.metrics_vals_imagine):
+                metrics_val['pcd_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.LIDAR_SEG.N_CLASSES, average='none',
+                )
+                metrics_val_imagine['pcd_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.LIDAR_SEG.N_CLASSES, average='none',
+                )
+
+            for metrics_test, metrics_test_imagine in zip(self.metrics_tests, self.metrics_tests_imagine):
+                metrics_test['pcd_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.LIDAR_SEG.N_CLASSES, average='none',
+                )
+                metrics_test_imagine['pcd_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.LIDAR_SEG.N_CLASSES, average='none',
+                )
+
         if self.cfg.SEMANTIC_IMAGE.ENABLED:
             self.sem_image_loss = SegmentationLoss(
                 use_top_k=self.cfg.SEMANTIC_IMAGE.USE_TOP_K,
@@ -144,6 +160,22 @@ class WorldModelTrainer(pl.LightningModule):
                 use_weights=self.cfg.SEMANTIC_IMAGE.USE_WEIGHTS,
                 is_bev=False,
             )
+
+            for metrics_val, metrics_val_imagine in zip(self.metrics_vals, self.metrics_vals_imagine):
+                metrics_val['image_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_IMAGE.N_CLASSES, average='none',
+                )
+                metrics_val_imagine['image_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_IMAGE.N_CLASSES, average='none',
+                )
+
+            for metrics_test, metrics_test_imagine in zip(self.metrics_tests, self.metrics_tests_imagine):
+                metrics_test['image_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_IMAGE.N_CLASSES, average='none',
+                )
+                metrics_test_imagine['image_iou'] = JaccardIndex(
+                    task='multiclass', num_classes=self.cfg.SEMANTIC_IMAGE.N_CLASSES, average='none',
+                )
 
         if self.cfg.DEPTH.ENABLED:
             self.depth_image_loss = SpatialRegressionLoss(norm=1)
@@ -173,7 +205,7 @@ class WorldModelTrainer(pl.LightningModule):
                 checkpoint = torch.load(self.cfg.PRETRAINED.PATH, map_location='cpu')['state_dict']
                 checkpoint = {key[6:]: value for key, value in checkpoint.items() if key[:5] == 'model'}
 
-                self.model.load_state_dict(checkpoint, strict=False)
+                self.model.load_state_dict(checkpoint, strict=True)
                 print(f'Loaded weights from: {self.cfg.PRETRAINED.PATH}')
             else:
                 raise FileExistsError(self.cfg.PRETRAINED.PATH)
@@ -355,7 +387,7 @@ class WorldModelTrainer(pl.LightningModule):
         return losses
 
     def training_step(self, batch, batch_idx):
-        if batch_idx == self.cfg.STEPS // 2 and self.cfg.MODEL.TRANSITION.ENABLED:
+        if batch_idx == self.cfg.STEPS and self.cfg.MODEL.TRANSITION.ENABLED:
             print('!' * 50)
             print('ACTIVE INFERENCE ACTIVATED')
             print('!' * 50)
@@ -410,23 +442,39 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.LIDAR_RE.ENABLED:
             lidar_target = batch['range_view_label_1']
             lidar_pred = output['lidar_reconstruction_1'].detach()
-            pcd_target = lidar_target.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
+            pcd_target = lidar_target.detach().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
                          * self.cfg.LIDAR_RE.SCALE
-            pcd_pred = lidar_pred.detach().cpu().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
+            pcd_pred = lidar_pred.detach().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
                        * self.cfg.LIDAR_RE.SCALE
             index = np.random.randint(0, pcd_target.size(-2), 1000)
             metrics['cd'].add_batch(pcd_pred[:, index, :-1], pcd_target[:, index, :-1])
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            pcd_sem_prediction = output['lidar_segmentation_1'].detach()
+            pcd_sem_prediction = torch.argmax(pcd_sem_prediction, dim=2)
+            metrics['pcd_iou'](
+                pcd_sem_prediction.view(-1).cpu(),
+                batch['range_view_seg_label_1'].view(-1).cpu()
+            )
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            image_sem_prediction = output['semantic_image_1'].detach()
+            image_sem_prediction = torch.argmax(image_sem_prediction, dim=2)
+            metrics['image_iou'](
+                image_sem_prediction.view(-1).cpu(),
+                batch['semantic_image_label_1'].reshape(-1).cpu()
+            )
 
         if self.cfg.VOXEL_SEG.ENABLED:
             self.compute_ssc_metrics(batch, output, metrics['ssc'])
 
     def compute_ssc_metrics(self, batch, output, metric):
-        y_true = batch['voxel_label_1'].cpu().numpy()
-        y_pred = output['voxel_1'].detach().cpu().numpy()
+        y_true = batch['voxel_label_1']
+        y_pred = output['voxel_1'].detach()
         b, s, c, x, y, z = y_pred.shape
         y_pred = y_pred.reshape(b * s, c, x, y, z)
         y_true = y_true.reshape(b * s, x, y, z)
-        y_pred = np.argmax(y_pred, axis=1)
+        y_pred = torch.argmax(y_pred, dim=1)
         metric.add_batch(y_pred, y_true)
 
     def logging_and_visualisation(self, batch, output, output_imagine, loss, loss_imagines, batch_idx, prefix='train'):
@@ -451,7 +499,7 @@ class WorldModelTrainer(pl.LightningModule):
                                      & (self.global_step != self.vis_step)
             self.vis_step = self.global_step
         else:
-            visualisation_criteria = batch_idx < 2
+            visualisation_criteria = batch_idx == 0
         if visualisation_criteria:
             self.visualise(batch, output, output_imagine, batch_idx, prefix=prefix)
 
@@ -466,13 +514,14 @@ class WorldModelTrainer(pl.LightningModule):
     def log_metrics(self, metrics_list, metrics_type):
         class_names = ['Background', 'Road', 'Lane marking', 'Vehicle', 'Pedestrian', 'Green light', 'Yellow light',
                        'Red light and stop sign']
+        class_names_voxel = list(VOXEL_LABEL.values())
         for idx, metrics in enumerate(metrics_list):
             prefix = f'{metrics_type}{idx}'
             if self.cfg.SEMANTIC_SEG.ENABLED:
                 scores = metrics['iou'].compute()
                 for key, value in zip(class_names, scores):
-                    self.logger.experiment.add_scalar(f'{prefix}_iou_' + key, value, global_step=self.global_step)
-                self.logger.experiment.add_scalar(f'{prefix}_mean_iou', torch.mean(scores), global_step=self.global_step)
+                    self.logger.experiment.add_scalar(f'{prefix}_bev_iou_' + key, value, global_step=self.global_step)
+                self.logger.experiment.add_scalar(f'{prefix}_bev_mean_iou', torch.mean(scores), global_step=self.global_step)
                 metrics['iou'].reset()
 
             if self.cfg.EVAL.RGB_SUPERVISION:
@@ -485,10 +534,23 @@ class WorldModelTrainer(pl.LightningModule):
                 self.log(f'{prefix}_chamfer_distance', metrics['cd'].get_stat())
                 metrics['cd'].reset()
 
+            if self.cfg.LIDAR_SEG.ENABLED:
+                scores_pcd = metrics['pcd_iou'].compute()
+                for key, value in zip(class_names_voxel, scores_pcd):
+                    self.logger.experiment.add_scalar(f'{prefix}_lidar_iou_' + key, value, global_step=self.global_step)
+                self.logger.experiment.add_scalar(f'{prefix}_lidar_mean_iou', torch.mean(scores_pcd), global_step=self.global_step)
+                metrics['pcd_iou'].reset()
+
+            if self.cfg.SEMANTIC_IMAGE.ENABLED:
+                scores_img = metrics['image_iou'].compute()
+                for key, value in zip(class_names_voxel, scores_img):
+                    self.logger.experiment.add_scalar(f'{prefix}_camera_iou_' + key, value, global_step=self.global_step)
+                self.logger.experiment.add_scalar(f'{prefix}_camera_mean_iou', torch.mean(scores_img), global_step=self.global_step)
+                metrics['image_iou'].reset()
+
             if self.cfg.VOXEL_SEG.ENABLED:
                 # class_names_voxel = ['Background', 'Road', 'RoadLines', 'Sidewalk', 'Vehicle',
                 #                      'Pedestrian', 'TrafficSign', 'TrafficLight', 'Others']
-                class_names_voxel = list(VOXEL_LABEL.values())
 
                 stats = metrics['ssc'].get_stats()
                 for i, class_name in enumerate(class_names_voxel):
@@ -793,38 +855,70 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.LIDAR_SEG.ENABLED:
             lidar_seg_target = batch['range_view_seg_label_1'][:, :, 0].cpu()
             lidar_seg_pred = torch.argmax(output['lidar_segmentation_1'].detach().cpu(), dim=-3)
+            lidar_seg_imagines = []
             if output_imagines:
-                lidar_seg_imagine = torch.argmax(output_imagines[0]['lidar_segmentation_1'].detach().cpu(), dim=-3)
-                lidar_seg_pred = torch.cat([lidar_seg_pred, lidar_seg_imagine], dim=1)
+                for imagine in output_imagines:
+                    lidar_seg_imagines.append(torch.argmax(imagine['lidar_segmentation_1'].detach().cpu(), dim=-3))
+            else:
+                lidar_seg_imagines.append(None)
 
-            colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=lidar_seg_pred.device)
+            colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=lidar_seg_pred.device) / 255.0
+            
             lidar_seg_target = colours[lidar_seg_target]
-            lidar_seg_pred = colours[lidar_seg_pred]
+            lidar_seg_target = F.pad(lidar_seg_target.permute(0, 1, 4, 2, 3), [3, 3, 3, 3], 'constant', 0.8)
 
-            lidar_seg_target = lidar_seg_target.permute(0, 1, 4, 2, 3)
-            lidar_seg_pred = lidar_seg_pred.permute(0, 1, 4, 2, 3)
+            lidar_seg_preds = []
 
-            visualisation_lidar_seg = torch.cat([lidar_seg_target, lidar_seg_pred], dim=-2).detach()
+            for i, lidar_seg_imagine in enumerate(lidar_seg_imagines):
+                lidar_seg_receptive = lidar_seg_pred if i == 0 else torch.zeros_like(lidar_seg_pred)
+                lidar_seg_i = lidar_seg_receptive if lidar_seg_imagine is None else torch.cat([lidar_seg_receptive, lidar_seg_imagine], dim=1)
+                lidar_seg_i = colours[lidar_seg_i]
+                lidar_seg_i = F.pad(lidar_seg_i.permute(0, 1, 4, 2, 3), [3, 3, 3, 3], 'constant', 0.8)
+                lidar_seg_preds.append(lidar_seg_i)
+
+            lidar_seg = torch.cat([lidar_seg_target, torch.ones_like(lidar_seg_target[:, -1:, ...]), *lidar_seg_preds], dim=1).detach()
+            visualisation_lidar_seg = lidar_seg.transpose(1, 2).flatten(2, 3)
+
             name_ = f'{name}_lidar_seg'
-            writer.add_video(name_, visualisation_lidar_seg, global_step=global_step, fps=2)
+            writer.add_images(name_, visualisation_lidar_seg, global_step=global_step)
 
         if self.cfg.SEMANTIC_IMAGE.ENABLED:
             sem_target = batch['semantic_image_label_1'][:, :, 0].cpu()
             sem_pred = torch.argmax(output['semantic_image_1'].detach().cpu(), dim=-3)
+            sem_imagines = []
             if output_imagines:
-                sem_imagine = torch.argmax(output_imagines[0]['semantic_image_1'].detach().cpu(), dim=-3)
-                sem_pred = torch.cat([sem_pred, sem_imagine], dim=1)
+                for imagine in output_imagines:
+                    sem_imagines.append(torch.argmax(imagine['semantic_image_1'].detach().cpu(), dim=-3))
+            else:
+                sem_imagines.append(None)
 
-            colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=sem_pred.device)
+            colours = torch.tensor(VOXEL_COLOURS, dtype=torch.uint8, device=sem_pred.device) / 255.0
+
             sem_target = colours[sem_target]
-            sem_pred = colours[sem_pred]
+            sem_target = F.pad(sem_target.permute(0, 1, 4, 2, 3), [5, 5, 5, 5], 'constant', 0.8)
 
-            sem_target = sem_target.permute(0, 1, 4, 2, 3)
-            sem_pred = sem_pred.permute(0, 1, 4, 2, 3)
+            sem_preds = []
 
-            visualisation_sem_image = torch.cat([sem_pred, sem_target], dim=-2).detach()
+            for i, sem_imagine in enumerate(sem_imagines):
+                sem_receptive = sem_pred if i == 0 else torch.zeros_like(sem_pred)
+                sem_i = sem_receptive if sem_imagine is None else torch.cat([sem_receptive, sem_imagine], dim=1)
+                sem_i = colours[sem_i]
+                sem_i = F.pad(sem_i.permute(0, 1, 4, 2, 3), [5, 5, 5, 5], 'constant', 0.8)
+                sem_preds.append(sem_i)
+
+            sem_image = torch.cat([sem_target, *sem_preds], dim=-2).detach()
+
+            b, _, c, h, w = sem_image.size()
+
+            visualisation_sem_image = []
+            for step in range(s):
+                if step == rf:
+                    visualisation_sem_image.append(torch.ones(b, c, h, int(w / 4), device=sem_pred.device))
+                visualisation_sem_image.append(sem_image[:, step])
+            visualisation_sem_image = torch.cat(visualisation_sem_image, dim=-1).detach()
+
             name_ = f'{name}_sem_image'
-            writer.add_video(name_, visualisation_sem_image, global_step=global_step, fps=2)
+            writer.add_images(name_, visualisation_sem_image, global_step=global_step)
 
         if self.cfg.DEPTH.ENABLED:
             depth_target = batch['depth_label_1'].cpu()
@@ -942,13 +1036,18 @@ class WorldModelTrainer(pl.LightningModule):
         def add_weight_decay(model, weight_decay=0.01, skip_list=[]):
             no_decay = []
             decay = []
+            train_list = []
+            frozen_list = []
             for name, param in model.named_parameters():
                 if not param.requires_grad:
+                    frozen_list.append(name)
                     continue
+                train_list.append(name)
                 if len(param.shape) == 1 or any(x in name for x in skip_list):
                     no_decay.append(param)
                 else:
                     decay.append(param)
+            print(f'train_layers: {train_list}\nfrozen_layers: {frozen_list}')
             return [
                 {'params': no_decay, 'weight_decay': 0.},
                 {'params': decay, 'weight_decay': weight_decay},

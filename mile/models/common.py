@@ -498,11 +498,11 @@ class VoxelDecoder1(nn.Module):
         super().__init__()
         n_channels = feature_channels
 
-        self.constant_tensor = nn.Parameter(torch.randn((n_channels, *constant_size), dtype=torch.float32))
+        self.constant_tensor = nn.Parameter(torch.randn((2 * n_channels, *constant_size), dtype=torch.float32))
 
         # Input 512 x 3 x 3 x 1
-        self.first_norm = AdaptiveInstanceNorm3d(latent_n_channels, out_channels=n_channels)
-        self.first_conv = ConvInstanceNorm3d(n_channels, n_channels, latent_n_channels)
+        self.first_norm = AdaptiveInstanceNorm3d(latent_n_channels, out_channels=2 * n_channels)
+        self.first_conv = ConvInstanceNorm3d(2 * n_channels, n_channels, latent_n_channels)
         # 512 x 3 x 3 x 1
 
         self.middle_conv = nn.ModuleList(

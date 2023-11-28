@@ -64,7 +64,7 @@ class DataModule(pl.LightningDataModule):
         # self.val_sampler = None
         self.test_sampler_0 = range(0, len(self.test_dataset), 900)
         self.test_sampler_1 = range(1500, len(self.test_dataset), 600)
-        self.test_sampler_2 = range(3000, len(self.test_dataset), 300)
+        self.test_sampler_2 = range(0, len(self.test_dataset), 150)
 
     def train_dataloader(self):
         return DataLoader(

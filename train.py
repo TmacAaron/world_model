@@ -64,7 +64,9 @@ def main():
     data = DataModule(cfg)
 
     input_model = Model(model_id='').get_local_copy() if cfg.PRETRAINED.CML_MODEL else None
+    # input_model = cfg.PRETRAINED.PATH
     model = WorldModelTrainer(cfg.convert_to_dict(), pretrained_path=input_model)
+    # model = WorldModelTrainer.load_from_checkpoint(checkpoint_path=input_model)
     # model.get_cml_logger(cml_logger)
 
     save_dir = os.path.join(

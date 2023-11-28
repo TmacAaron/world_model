@@ -64,36 +64,36 @@ VOXEL_LABEL_CARLA = {
     22:  'Terrain',  # Terrain
 }
 
-VOXEL_LABEL = {
-    0:  'Background',
-    1:  'Road',
-    2:  'RoadLines',
-    3:  'Sidewalk',
-    4:  'Vehicle',
-    5:  'Pedestrian',
-    6:  'TrafficSign',
-    7:  'TrafficLight',
-    8:  'Others'
-}
 # VOXEL_LABEL = {
 #     0:  'Background',
-#     1:  'Occupancy',
+#     1:  'Road',
+#     2:  'RoadLines',
+#     3:  'Sidewalk',
+#     4:  'Vehicle',
+#     5:  'Pedestrian',
+#     6:  'TrafficSign',
+#     7:  'TrafficLight',
+#     8:  'Others'
 # }
+VOXEL_LABEL = {
+    0:  'Background',
+    1:  'Occupancy',
+}
 # VOXEL_LABEL = VOXEL_LABEL_CARLA
 
-VOXEL_COLOURS = np.array([[255, 255, 255],  # Background
-                          [150, 150, 150],  # Road
-                          [200, 200, 20],  # Road Lines
-                          [200, 200, 200],  # Sidewalk
-                          [0, 83, 138],  # Vehicle
-                          [127, 255, 212],  # Pedestrian
-                          [220, 20, 60],  # Traffic Sign
-                          [100, 150, 35],  # Traffic light
-                          [0, 0, 0],  # Others
-                          ], dtype=np.uint8)
 # VOXEL_COLOURS = np.array([[255, 255, 255],  # Background
-#                           [115, 115, 115],  # Others
+#                           [150, 150, 150],  # Road
+#                           [200, 200, 20],  # Road Lines
+#                           [200, 200, 200],  # Sidewalk
+#                           [0, 83, 138],  # Vehicle
+#                           [127, 255, 212],  # Pedestrian
+#                           [220, 20, 60],  # Traffic Sign
+#                           [100, 150, 35],  # Traffic light
+#                           [0, 0, 0],  # Others
 #                           ], dtype=np.uint8)
+VOXEL_COLOURS = np.array([[255, 255, 255],  # Background
+                          [115, 115, 115],  # Others
+                          ], dtype=np.uint8)
 # VOXEL_COLOURS = np.array([[255, 255, 255],  # None
 #                           [70, 70, 70],     # Building
 #                           [100, 40, 40],    # Fences
@@ -152,56 +152,56 @@ VOXEL_COLOURS = np.array([[255, 255, 255],  # Background
 #                           [180, 165, 180],    # gard rail = 28
 #                           ], dtype=np.uint8)
 
-LABEL_MAP = {
-    0:  0,  # None
-    1:  8,  # Building
-    2:  8,  # Fences
-    3:  8,  # Other
-    4:  5,  # Pedestrian
-    5:  8,  # Pole
-    6:  2,  # RoadLines
-    7:  1,  # Road
-    8:  3,  # Sidewalk
-    9:  8,  # Vegetation
-    10: 4,  # Vehicle
-    11: 8,  # Wall
-    12: 6,  # TrafficSign
-    13: 0,  # Sky
-    14: 8,  # Ground
-    15: 8,  # Bridge
-    16: 8,  # RailTrack
-    17: 8,  # GuardRail
-    18: 7,  # TrafficLight
-    19: 8,  # Static
-    20: 8,  # Dynamic
-    21: 8,  # Water
-    22: 8,  # Terrain
-}
 # LABEL_MAP = {
 #     0:  0,  # None
-#     1:  1,  # Building
-#     2:  1,  # Fences
-#     3:  1,  # Other
-#     4:  1,  # Pedestrian
-#     5:  1,  # Pole
-#     6:  1,  # RoadLines
+#     1:  8,  # Building
+#     2:  8,  # Fences
+#     3:  8,  # Other
+#     4:  5,  # Pedestrian
+#     5:  8,  # Pole
+#     6:  2,  # RoadLines
 #     7:  1,  # Road
-#     8:  1,  # Sidewalk
-#     9:  1,  # Vegetation
-#     10: 1,  # Vehicle
-#     11: 1,  # Wall
-#     12: 1,  # TrafficSign
-#     13: 1,  # Sky
-#     14: 1,  # Ground
-#     15: 1,  # Bridge
-#     16: 1,  # RailTrack
-#     17: 1,  # GuardRail
-#     18: 1,  # TrafficLight
-#     19: 1,  # Static
-#     20: 1,  # Dynamic
-#     21: 1,  # Water
-#     22: 1,  # Terrain
+#     8:  3,  # Sidewalk
+#     9:  8,  # Vegetation
+#     10: 4,  # Vehicle
+#     11: 8,  # Wall
+#     12: 6,  # TrafficSign
+#     13: 0,  # Sky
+#     14: 8,  # Ground
+#     15: 8,  # Bridge
+#     16: 8,  # RailTrack
+#     17: 8,  # GuardRail
+#     18: 7,  # TrafficLight
+#     19: 8,  # Static
+#     20: 8,  # Dynamic
+#     21: 8,  # Water
+#     22: 8,  # Terrain
 # }
+LABEL_MAP = {
+    0:  0,  # None
+    1:  1,  # Building
+    2:  1,  # Fences
+    3:  1,  # Other
+    4:  1,  # Pedestrian
+    5:  1,  # Pole
+    6:  1,  # RoadLines
+    7:  1,  # Road
+    8:  1,  # Sidewalk
+    9:  1,  # Vegetation
+    10: 1,  # Vehicle
+    11: 1,  # Wall
+    12: 1,  # TrafficSign
+    13: 0,  # Sky
+    14: 1,  # Ground
+    15: 1,  # Bridge
+    16: 1,  # RailTrack
+    17: 1,  # GuardRail
+    18: 1,  # TrafficLight
+    19: 1,  # Static
+    20: 1,  # Dynamic
+    21: 1,  # Water
+    22: 1,  # Terrain
+}
 # LABEL_MAP = {
 #     0:  0,  # None
 #     1:  1,  # Building
