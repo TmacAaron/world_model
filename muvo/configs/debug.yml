@@ -1,4 +1,4 @@
-_BASE_: 'mile.yml'
+_BASE_: 'muvo.yml'
 
 LOG_DIR: 'tensorboard_logs'
 TAG: 'debug'
@@ -54,7 +54,7 @@ LOSSES:
 MODEL:
   EMBEDDING_DIM: 512
   TRANSFORMER:
-    ENABLED: False
+    ENABLED: True
     BEV: False
     LARGE: False
   LIDAR:
@@ -70,8 +70,8 @@ FUTURE_HORIZON: 1
 PRETRAINED:
 #  PATH: 'weights/epoch=37-step=57600.ckpt'
 #  PATH: 'weights/epoch=65-step=99000.ckpt'
-#  PATH: 'weights/epoch=65-step=99000_transformer.ckpt'
-  PATH: ''
+  PATH: 'weights/epoch=3-step=50000.ckpt'
+#  PATH: ''
 #
 #DATASET:
 #  DATAROOT: ''

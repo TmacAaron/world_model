@@ -8,9 +8,9 @@ from torch.utils.tensorboard.writer import SummaryWriter
 # import lightning.pytorch as pl
 import numpy as np
 
-from mile.config import get_parser, get_cfg
-from mile.data.dataset import DataModule
-from mile.trainer import WorldModelTrainer
+from muvo.config import get_parser, get_cfg
+from muvo.data.dataset import DataModule
+from muvo.trainer import WorldModelTrainer
 from lightning.pytorch.callbacks import ModelSummary
 
 from clearml import Task, Dataset, Model

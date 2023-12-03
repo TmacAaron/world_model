@@ -6,8 +6,8 @@ import torchvision.transforms.functional as tvf
 # import skimage.transform as skt
 from typing import Dict, Tuple
 
-from mile.utils.geometry_utils import get_out_of_view_mask
-from mile.utils.instance_utils import convert_instance_mask_to_center_and_offset_label
+from muvo.utils.geometry_utils import get_out_of_view_mask
+from muvo.utils.instance_utils import convert_instance_mask_to_center_and_offset_label
 
 
 class PreProcess(nn.Module):

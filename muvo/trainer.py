@@ -7,13 +7,13 @@ import torch.nn.functional as F
 import lightning.pytorch as pl
 from torchmetrics import JaccardIndex
 
-from mile.config import get_cfg
-from mile.models.mile import Mile
-from mile.losses import \
+from muvo.config import get_cfg
+from muvo.models.mile import Mile
+from muvo.losses import \
     SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss, SemScalLoss, GeoScalLoss
-from mile.metrics import SSCMetrics, SSIMMetric, CDMetric, PSNRMetric
-from mile.models.preprocess import PreProcess
-from mile.utils.geometry_utils import PointCloud, compute_pcd_transformation
+from muvo.metrics import SSCMetrics, SSIMMetric, CDMetric, PSNRMetric
+from muvo.models.preprocess import PreProcess
+from muvo.utils.geometry_utils import PointCloud, compute_pcd_transformation
 from constants import BIRDVIEW_COLOURS, VOXEL_COLOURS, VOXEL_LABEL
 
 import matplotlib
@@ -226,6 +226,7 @@ class WorldModelTrainer(pl.LightningModule):
         losses_imagines = []
 
         if mode == 'train':
+            # in training, only reconstruction
             output, state_dict = self.forward(batch)
             losses = self.compute_loss(batch, output)
         else:
@@ -235,6 +236,7 @@ class WorldModelTrainer(pl.LightningModule):
             output, state_dict = self.model.forward(batch_rf, deployment=False)
             losses = self.compute_loss(batch_rf, output)
 
+            # in evaluation, do imagination (prediction)
             state_imagine = {'hidden_state': state_dict['posterior']['hidden_state'][:, -1],
                              'sample': state_dict['posterior']['sample'][:, -1],
                              'throttle_brake': batch['throttle_brake'][:, self.rf:],
@@ -262,6 +264,7 @@ class WorldModelTrainer(pl.LightningModule):
 
                 losses['probabilistic'] = self.cfg.LOSSES.WEIGHT_PROBABILISTIC * probabilistic_loss
 
+        # compute losses in down-sampling scale 1, 2, 4, separately.
         if self.cfg.SEMANTIC_SEG.ENABLED:
             for downsampling_factor in [1, 2, 4]:
                 bev_segmentation_loss = self.segmentation_loss(
@@ -442,12 +445,21 @@ class WorldModelTrainer(pl.LightningModule):
         if self.cfg.LIDAR_RE.ENABLED:
             lidar_target = batch['range_view_label_1']
             lidar_pred = output['lidar_reconstruction_1'].detach()
+
             pcd_target = lidar_target.detach().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
                          * self.cfg.LIDAR_RE.SCALE
             pcd_pred = lidar_pred.detach().permute(0, 1, 3, 4, 2).flatten(2, 3).flatten(0, 1) \
                        * self.cfg.LIDAR_RE.SCALE
-            index = np.random.randint(0, pcd_target.size(-2), 1000)
+            index = np.random.randint(0, pcd_target.size(-2), 10000)
             metrics['cd'].add_batch(pcd_pred[:, index, :-1], pcd_target[:, index, :-1])
+
+            # pcd_target = lidar_target.detach().permute(0, 1, 3, 4, 2).flatten(0, 1) \
+            #              * self.cfg.LIDAR_RE.SCALE
+            # valid_target = pcd_target[..., -1] > 0
+            # pcd_pred = lidar_pred.detach().permute(0, 1, 3, 4, 2).flatten(0, 1) \
+            #            * self.cfg.LIDAR_RE.SCALE
+            # valid_pred = pcd_pred[..., -1] > 0
+            # metrics['cd'].add_batch(pcd_pred[..., :-1], pcd_target[..., :-1], valid_pred, valid_target)
 
         if self.cfg.LIDAR_SEG.ENABLED:
             pcd_sem_prediction = output['lidar_segmentation_1'].detach()
@@ -485,13 +497,6 @@ class WorldModelTrainer(pl.LightningModule):
         if loss_imagines:
             for key, value in loss_imagines[0].items():
                 self.log(f'{prefix}_{key}_imagine', value)
-
-        # if self.cfg.EVAL.RGB_SUPERVISION:
-        #     ssim_value = self.ssim_metric(
-        #         prediction=output[f'rgb_1'].detach(),
-        #         target=batch[f'rgb_label_1'][:, :self.rf],
-        #     )
-        #     self.log(f'{prefix}_ssim', ssim_value)
 
         #  Visualisation
         if prefix == 'train':
@@ -563,8 +568,8 @@ class WorldModelTrainer(pl.LightningModule):
 
     def visualise(self, batch, output, output_imagines, batch_idx, prefix='train', writer=None):
         writer = writer if writer else self.logger.experiment
-        s = list(batch.values())[0].shape[1]
-        rf = list(output.values())[-1].shape[1]
+        s = list(batch.values())[0].shape[1]    # total sequence length
+        rf = list(output.values())[-1].shape[1]  # receptive field
 
         name = f'{prefix}_outputs'
         if prefix != 'train':
@@ -600,6 +605,7 @@ class WorldModelTrainer(pl.LightningModule):
             pred = torch.argmax(output['bev_segmentation_1'].detach().cpu(), dim=-3)
             bev_imagines = []
             if output_imagines:
+                # multi samples of future
                 for imagine in output_imagines:
                     bev_imagines.append(torch.argmax(imagine['bev_segmentation_1'].detach().cpu(), dim=-3))
             else:
@@ -610,10 +616,11 @@ class WorldModelTrainer(pl.LightningModule):
             target = colours[target]
             # pred = colours[pred]
 
-            # Move channel to third position
+            # Move channel to third position and add white border
             target = F.pad(target.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
             # pred = F.pad(pred.permute(0, 1, 4, 2, 3), [2, 2, 2, 2], 'constant', 0.8)
             preds = []
+            # put reconstruction and all imaginations together
             for i, bev_imagine in enumerate(bev_imagines):
                 bev_receptive = pred if i == 0 else torch.zeros_like(pred)
                 p_i = bev_receptive if bev_imagine is None else torch.cat([bev_receptive, bev_imagine], dim=1)
@@ -622,6 +629,7 @@ class WorldModelTrainer(pl.LightningModule):
                 preds.append(p_i)
 
             bev = torch.cat([*preds[::-1], target], dim=-1).detach()
+            # Rotation for Visualization
             bev = torch.rot90(bev, k=1, dims=[3, 4])
 
             b, _, c, h, w = bev.size()
@@ -629,6 +637,7 @@ class WorldModelTrainer(pl.LightningModule):
             visualisation_bev = []
             for step in range(s):
                 if step == rf:
+                    # separate the receptive filed and future horizon
                     visualisation_bev.append(torch.ones(b, c, h, int(w / 4), device=pred.device))
                 visualisation_bev.append(bev[:, step])
             visualisation_bev = torch.cat(visualisation_bev, dim=-1).detach()
@@ -675,6 +684,7 @@ class WorldModelTrainer(pl.LightningModule):
             blue = np.array([0, 0, 200])[None, None]
             mid = int(w / 2) + 5
 
+            # visualize accelerating and steering. green for throttle, red for brake, blue for steer.
             for b_idx in range(b):
                 for step in range(s):
                     if acc[b_idx, step] >= 0:
@@ -711,6 +721,7 @@ class WorldModelTrainer(pl.LightningModule):
             writer.add_images(name_, visualisation_rgb, global_step=global_step)
 
             ###################################
+            # visualize optical flow of rgb images.
             flows = []
             rgb_target_np = (rgb_target.detach().cpu().numpy().transpose(0, 1, 3, 4, 2) * 255).astype(np.uint8)
             rgb_preds_np = [(rgb_pred_.detach().cpu().numpy().transpose(0, 1, 3, 4, 2) * 255).astype(np.uint8)
@@ -720,6 +731,7 @@ class WorldModelTrainer(pl.LightningModule):
                 for step in range(1, rgb.size(1)):
                     img1_target = rgb_target_np[bs, step - 1][5: -5, 5: -5]
                     img2_target = rgb_target_np[bs, step][5: -5, 5: -5]
+                    # use color to present flow
                     flow_target = self.get_color_coded_flow(img1_target, img2_target)
                     flow_target = F.pad(flow_target, [5, 5, 5, 5], 'constant', 0.8)
 
@@ -756,6 +768,7 @@ class WorldModelTrainer(pl.LightningModule):
             name_ = f'{name}_lidar'
             writer.add_video(name_, visualisation_lidar, global_step=global_step, fps=2)
 
+            # get the bird-eye-view of point cloud
             pcd_image_target, pcd_target, valid_target = self.pcd_xy_image(lidar_target)
             pcd_image_target = F.pad(pcd_image_target, [2, 2, 2, 2], 'constant', 0.2)
 
@@ -792,6 +805,7 @@ class WorldModelTrainer(pl.LightningModule):
             name_ = f'{name}_pcd_xy'
             writer.add_images(name_, visualisation_pcd, global_step=global_step)
 
+            # calculate the ego-vehicle trajectory from point cloud and visualize it
             visualisation_traj = []
             for bs in range(pcd_target.shape[0]):
                 path_target = [{'Rot': np.eye(3), 'pos': np.zeros((3, 1))}]
@@ -826,31 +840,6 @@ class WorldModelTrainer(pl.LightningModule):
             visualisation_traj = torch.cat(visualisation_traj, dim=0) / 255.0
             name_ = f'{name}_traj'
             writer.add_images(name_, visualisation_traj, global_step=global_step)
-
-            # pcd1_pred = pcd_preds[0][bs, step - 1]
-            # pcd2_pred = pcd_preds[0][bs, step]
-            # _, Rt_pred = compute_pcd_transformation(pcd1_pred, pcd2_pred, path_pred[-1], threshold=5)
-            # path_pred.append(Rt_pred)
-
-            # if self.cml_logger is not None:
-            #     name_ = f'{name}_pcd'
-            #     self.cml_logger.report_scatter3d(title=f'{name_}_target', series=prefix, scatter=pcd_target,
-            #                                      iteration=self.global_step, mode='markers',
-            #                                      extra_layout={'marker': {'size': 1}})
-            #     self.cml_logger.report_scatter3d(title=f'{name_}_target_d', series=prefix, scatter=pcd_target0,
-            #                                      iteration=self.global_step, mode='markers',
-            #                                      extra_layout={'marker': {'size': 1}})
-            #     self.cml_logger.report_scatter3d(title=f'{name_}_pred', series=prefix, scatter=pcd_pred,
-            #                                      iteration=self.global_step, mode='markers',
-            #                                      extra_layout={'marker': {'size': 1}})
-            #     self.cml_logger.report_scatter3d(title=f'{name_}_pred_d', series=prefix, scatter=pcd_pred0,
-            #                                      iteration=self.global_step, mode='markers',
-            #                                      extra_layout={'marker': {'size': 1}})
-
-            # writer.add_mesh(f'{name_}_target', vertices=pcd_target)
-            # writer.add_mesh(f'{name_}_target_d', vertices=pcd_target0[None])
-            # writer.add_mesh(f'{name_}_pred', vertices=pcd_pred1)
-            # writer.add_mesh(f'{name_}_pred_d', vertices=pcd_pred0[None])
 
         if self.cfg.LIDAR_SEG.ENABLED:
             lidar_seg_target = batch['range_view_seg_label_1'][:, :, 0].cpu()
@@ -950,6 +939,7 @@ class WorldModelTrainer(pl.LightningModule):
                 self.write_voxel_figure(
                     voxel_imagine_pred, voxel_color_imagine_pred, f'{name_}_imagine_pred', global_step, writer)
 
+        # visualize route map
         if self.cfg.MODEL.ROUTE.ENABLED:
             route_map = batch['route_map'].cpu()
             route_map = F.pad(route_map, [2, 2, 2, 2], 'constant', 0.8)
@@ -966,6 +956,7 @@ class WorldModelTrainer(pl.LightningModule):
             name_ = f'{name}_input_route_map'
             writer.add_images(name_, visualisation_route, global_step=global_step)
 
+    # render 1 frame voxel
     def write_voxel_figure(self, voxel, voxel_color, name, global_step, writer):
         fig = plt.figure(figsize=(10, 10))
         ax = fig.add_subplot(projection='3d')
@@ -974,6 +965,7 @@ class WorldModelTrainer(pl.LightningModule):
         ax.set_axis_off()
         writer.add_figure(name, fig, global_step=global_step)
 
+    # render trajectory
     def plot_traj(self, traj, img):
         x, y, z = traj[-1]['pos']
         plot_x = int(96 - 5 * y)
@@ -996,11 +988,13 @@ class WorldModelTrainer(pl.LightningModule):
         pcd_xy = -pcd[..., :2]
         pcd_xy *= min(image_size) / (2 * lidar_range)
         pcd_xy += 0.5 * image_size.reshape((1, 1, 1, 1, -1))
+        # only the point which range > 0 is valid
         valid = pcd[..., -1] > 0
 
         b, s, _, _, _ = pcd.shape
         pcd_xy_image = np.zeros((b, s, *image_size, 3))
 
+        # projection point cloud to xy coordinate (bird-eye-view)
         for i in range(b):
             for j in range(s):
                 hw = pcd_xy[i, j][valid[i, j]]
@@ -1026,6 +1020,7 @@ class WorldModelTrainer(pl.LightningModule):
         return torch.tensor(color_coded_flow.transpose(2, 0, 1), dtype=torch.float) / 255.0
 
     def configure_optimizers(self):
+        # frozen the layer that not in train list
         def frozen_params(model, no_frozen_list=[]):
             for name, param in model.named_parameters():
                 if not any(name.startswith(layer) for layer in no_frozen_list):

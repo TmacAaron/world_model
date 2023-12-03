@@ -142,6 +142,8 @@ class KLLoss(nn.Module):
 
 
 class VoxelLoss(nn.Module):
+    """ 3D version of SegmentationLoss """
+
     def __init__(self, use_top_k=False, top_k_ratio=1.0, use_weights=False, poly_one=False, poly_one_coefficient=0.0):
         super().__init__()
         self.use_top_k = use_top_k
@@ -184,6 +186,8 @@ class VoxelLoss(nn.Module):
         return torch.mean(loss)
 
 
+# Scene-Class Affinity Loss proposed in MonoScene
+# https://github.com/astra-vision/MonoScene/blob/master/monoscene/loss/ssc_loss.py
 class SemScalLoss(nn.Module):
     def __init__(self, ignore_index=255):
         super().__init__()
@@ -283,6 +287,8 @@ class GeoScalLoss(nn.Module):
         return loss
 
 
+# Structure Similarity Index Measure,
+# modified from https://github.com/Po-Hsun-Su/pytorch-ssim/blob/master/pytorch_ssim/__init__.py
 class SSIMLoss(nn.Module):
     def __init__(self, channel=1, window_size=11, sigma=1.5, L=1, non_negative=False):
         super().__init__()
@@ -300,6 +306,7 @@ class SSIMLoss(nn.Module):
         gauss = torch.exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2))
         return gauss / gauss.sum()
 
+    # gaussian kernel
     def create_window(self):
         _1D_window = self.gaussian(self.window_size, self.sigma).unsqueeze(1)
         _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
@@ -341,6 +348,7 @@ class SSIMLoss(nn.Module):
         return loss.mean()
 
 
+# Chamfer Distance
 class CDLoss(nn.Module):
     def __init__(self, reducer=torch.mean):
         super().__init__()
@@ -352,7 +360,8 @@ class CDLoss(nn.Module):
         prediction = prediction.view(b * s, n, d)
         target = target.view(b * s, n, d)
         # dist = self.batch_pairwise_dist(prediction, target)
-        dist = torch.cdist(prediction.float(), target.float(), 2)
+        # point-to-point distance
+        dist = torch.cdist(prediction.float(), target.float(), 2)   # b*s, n, n
         dl, dr = dist.min(1)[0], dist.min(2)[0]
         loss = self.reducer(dl, dim=1) + self.reducer(dr, dim=1)
         return loss.mean()

@@ -1,4 +1,4 @@
-_BASE_: 'mile.yml'
+_BASE_: 'muvo.yml'
 
 LOG_DIR: 'tensorboard_logs'
 TAG: 'predict'

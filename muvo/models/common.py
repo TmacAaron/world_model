@@ -428,6 +428,7 @@ class VoxelDecoderScale(nn.Module):
     def __init__(self, input_channels, n_classes, kernel_size=1, feature_channels=512):
         super().__init__()
 
+        # weight of xy,xz,yz view features.
         self.weight_xy_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
         self.weight_xz_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
         self.weight_yz_decoder = nn.Conv2d(input_channels, 1, kernel_size, 1)
@@ -465,6 +466,7 @@ class VoxelDecoderScale(nn.Module):
         feature_xy, feature_xz, feature_yz = self.expand_to_XYZ(feature_xy, feature_xz, feature_yz)
         weights_xy, weights_xz, weights_yz = self.expand_to_XYZ(weights_xy, weights_xz, weights_yz)
 
+        # fuse xy, xz, yz features in xyz.
         features_xyz = self.attention_fusion(feature_xy, weights_xy, feature_xz, weights_xz) + \
                        self.attention_fusion(feature_xy, weights_xy, feature_yz, weights_yz)
 
@@ -544,28 +546,6 @@ class VoxelDecoder1(nn.Module):
         return output
 
 
-# class LidarDecoder(nn.Module):
-#     def __init__(self, latent_n_channels, semantic_n_channels, constant_size=(1, 16), is_segmentation=True):
-#         super().__init__()
-#         self.is_seg = is_segmentation
-#         self.decoder = ConvDecoder(latent_n_channels, semantic_n_channels, constant_size)
-#
-#     def forward(self, x):
-#         output = self.decoder(x)
-#         if self.is_seg:
-#             return{
-#                 'lidar_segmentation_1': output['rgb_1'],
-#                 'lidar_segmentation_2': output['rgb_2'],
-#                 'lidar_segmentation_4': output['rgb_4'],
-#             }
-#         else:
-#             return {
-#                 'lidar_reconstruction_1': output['rgb_1'],
-#                 'lidar_reconstruction_2': output['rgb_2'],
-#                 'lidar_reconstruction_4': output['rgb_4']
-#             }
-
-
 class ConvDecoder(nn.Module):
     def __init__(self, latent_n_channels, out_channels, constant_size=(5, 13), mlp_layers=0, layer_norm=True,
                  activation=nn.ELU, head='rgb'):
@@ -595,7 +575,7 @@ class ConvDecoder(nn.Module):
             # *layers,
             # nn.Unflatten(-1, (n_channels, 1, 5)),
             # nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2),  # 5 x 13
-            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=constant_size),
+            nn.ConvTranspose2d(n_channels, n_channels, kernel_size=constant_size),  # 5 x 13
             activation(),
             nn.ConvTranspose2d(n_channels, n_channels, kernel_size=5, stride=2, padding=2, output_padding=1),  # 10 x 26
             activation(),
@@ -652,6 +632,7 @@ class ConvDecoder(nn.Module):
         return output
 
 
+# https://github.com/opendilab/InterFuser/blob/e0682c350892a243cf40bf448622743f4b26d0f3/interfuser/timm/models/interfuser.py#L66
 class PositionEmbeddingSine(nn.Module):
     """
     This is a more standard version of the position embedding, very similar to the one
@@ -697,6 +678,7 @@ class PositionEmbeddingSine(nn.Module):
         return pos
 
 
+# https://github.com/dotchen/LAV/blob/main/lav/models/point_pillar.py#L38
 class DynamicPointNet(nn.Module):
     def __init__(self, num_input=9, num_features=[32, 32]):
         super().__init__()

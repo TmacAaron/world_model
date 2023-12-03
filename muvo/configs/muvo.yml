@@ -1,8 +1,8 @@
 LOG_DIR: 'tensorboard_logs'
-TAG: 'mile'
+TAG: 'muvo'
 
 CML_PROJECT: 'MasterThesis/world_model'
-CML_TASK: 'mile'
+CML_TASK: 'muvo'
 CML_TYPE: 'training'
 CML_DATASET: 'carla_dataset'
 

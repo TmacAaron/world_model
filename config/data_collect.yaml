@@ -7,7 +7,7 @@ work_dir: /mnt/d/python/dataset/outputs
 
 defaults:
   - agent:
-#    - mile
+#    - muvo
     - ppo
     - my
   - test_suites: lb_data

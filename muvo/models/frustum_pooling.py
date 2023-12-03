@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mile.utils.geometry_utils import bev_params_to_intrinsics, intrinsics_inverse
+from muvo.utils.geometry_utils import bev_params_to_intrinsics, intrinsics_inverse
 
 
 def gen_dx_bx(size, scale, offsetx):

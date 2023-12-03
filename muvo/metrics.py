@@ -3,13 +3,15 @@ code is taken from https://github.com/astra-vision/MonoScene/blob/master/monosce
 
 Part of the code is taken from https://github.com/waterljwant/SSC/blob/master/sscMetrics.py
 """
-import numpy as np
+# import numpy as np
 import torch
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from chamferdist import ChamferDistance
+# from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
-from mile.losses import SSIMLoss, CDLoss
+from muvo.losses import SSIMLoss, CDLoss
 
 
+# SSCMetrics code is modified from https://github.com/astra-vision/MonoScene/blob/master/monoscene/loss/sscMetrics.py
 def get_iou(iou_sum, cnt_class):
     _C = iou_sum.shape[0]  # 12
     iou = torch.zeros(_C, dtype=torch.float32)  # iou for each class
@@ -151,8 +153,8 @@ class SSCMetrics:
         target = target.reshape(_bs, -1)  # (_bs, 129600)
         predict = predict.reshape(_bs, -1)  # (_bs, _C, 129600), 60*36*60=129600
         # ---- treat all non-empty object class as one category, set them to label 1
-        b_pred = torch.zeros(predict.shape)
-        b_true = torch.zeros(target.shape)
+        b_pred = predict.new_zeros(predict.shape)
+        b_true = target.new_zeros(target.shape)
         b_pred[predict > 0] = 1
         b_true[target > 0] = 1
         p, r, iou = 0.0, 0.0, 0.0
@@ -245,6 +247,40 @@ class CDMetric:
         dl, dr = dist.min(1)[0], dist.min(2)[0]
         cost = (self.reducer(dl, dim=1) + self.reducer(dr, dim=1)) / 2
         self.total_cost += cost.mean()
+        self.avg_cost = self.total_cost / self.count
+
+    def get_stat(self):
+        return self.avg_cost
+
+    def reset(self):
+        self.total_cost = 0
+        self.count = 1e-8
+        self.avg_cost = 0
+
+
+class CDMetric0:
+    def __init__(self):
+        self.chamferDist = ChamferDistance()
+        self.reset()
+
+    def add_batch(self, prediction, target, valid_pred, valid_target):
+        self.count += 1
+        b = prediction.shape[0]
+        cdist = 0
+        for i in range(b):
+            # cdist += 0.5 * self.chamferDist(prediction[i][valid_pred[i]][None].float(),
+            #                                 target[i][valid_target[i]][None].float(),
+            #                                 bidirectional=True).detach().cpu().item()
+            pred_pcd = prediction[i][valid_pred[i]]
+            target_pcd = target[i][valid_target[i]]
+            cd_forward = self.chamferDist(pred_pcd[None].float(),
+                                          target_pcd[None].float(),
+                                          point_reduction='mean').detach().cpu().item()
+            cd_backward = self.chamferDist(target_pcd[None].float(),
+                                           pred_pcd[None].float(),
+                                           point_reduction='mean').detach().cpu().item()
+            cdist += 0.5 * (cd_forward + cd_backward)
+        self.total_cost += cdist / b
         self.avg_cost = self.total_cost / self.count
 
     def get_stat(self):

@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import open3d as o3d
 import cv2
-from mile.data.dataset_utils import preprocess_gps
+from muvo.data.dataset_utils import preprocess_gps
 
 
 def bev_params_to_intrinsics(size, scale, offsetx):
@@ -173,6 +173,7 @@ class PointCloud(object):
         self.lidar_position = np.asarray(lidar_position)
 
     def do_range_projection(self, points, semantics):
+        # restore points coordinate to original carla's lidar.
         points_carla = points * np.array([1, -1, 1])
         points_carla -= self.lidar_position
 
@@ -198,6 +199,7 @@ class PointCloud(object):
         proj_h = np.minimum(self.H - 1, proj_h)
         proj_h = np.maximum(0, proj_h).astype(np.int32)
 
+        # After sorting by depth from largest to smallest, close point will rewrite distant point in the same pixel.
         order = np.argsort(depth)[::-1]
         depth = depth[order]
         proj_w = proj_w[order]
@@ -217,6 +219,7 @@ class PointCloud(object):
         range_sem[proj_h, proj_w] = semantics
         return range_depth, range_xyz, range_sem
 
+    # re-projection range-view pcd to original coordinate.
     def restore_pcd_coor(self, range_depth):
         h, w = np.arange(0, self.H), np.arange(0, self.W)
         proj_w, proj_h = np.meshgrid(w, h)
@@ -241,6 +244,7 @@ class PointCloud(object):
         return np.concatenate([points, depth[..., None]], axis=-1)
 
 
+# use open3d to calculate the transformation between two point clouds.
 def compute_pcd_transformation(pcd1, pcd2, Rt, threshold=0.02):
     if len(pcd1) > 0 and len(pcd2) > 0:
         source = o3d.geometry.PointCloud()

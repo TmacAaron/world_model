@@ -1,6 +1,6 @@
 defaults:
   - test_suites: lb_test
-  - agent: mile
+  - agent: muvo
   - _self_
 
 carla_sh_path: ''
@@ -12,14 +12,14 @@ seed: 2021
 no_rendering: false
 kill_running: true
 resume: true
-wb_project: mile
+wb_project: muvo
 wb_group: evaluation
 wb_tags: null
 log_video: true
 
 actors:
   hero:
-    agent: mile
+    agent: muvo
     reward:
       entry_point: reward.valeo_action:ValeoAction
     terminal:

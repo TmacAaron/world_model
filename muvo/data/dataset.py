@@ -10,9 +10,9 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 from constants import CARLA_FPS, EGO_VEHICLE_DIMENSION, LABEL_MAP, VOXEL_LABEL, VOXEL_LABEL_CARLA
-from mile.data.dataset_utils import integer_to_binary, calculate_birdview_labels, calculate_instance_mask
-from mile.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
-from mile.utils.geometry_utils import PointCloud
+from muvo.data.dataset_utils import integer_to_binary, calculate_birdview_labels, calculate_instance_mask
+from muvo.utils.geometry_utils import get_out_of_view_mask, calculate_geometry, lidar_to_histogram_features
+from muvo.utils.geometry_utils import PointCloud
 from data.data_preprocessing import convert_coor_lidar
 
 
@@ -36,14 +36,15 @@ class DataModule(pl.LightningDataModule):
         # self.val_dataset = CarlaDataset(
         #     self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         # )
+        # mutil validation dataset
         self.val_dataset_0 = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='val0', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_1 = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='val1', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_2 = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.test_dataset = CarlaDataset(
             self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
@@ -287,12 +288,15 @@ class CarlaDataset(Dataset):
         ego_idx = ((ego_box[0] < points) & (points < ego_box[1])).all(axis=1)
         semantics = semantics[~ego_idx]
         points = points[~ego_idx]
+
+        # histogram of lidar
         # single_element_t['points'] = points
         # single_element_t['points_label'] = pcd_semantic['ObjTag'].astype('uint8')
         # single_element_t['points_histogram_xy'], \
         # single_element_t['points_histogram_xz'], \
         # single_element_t['points_histogram_yz'] = lidar_to_histogram_features(points, self.cfg)
 
+        # range-view of lidar point cloud
         range_view_pcd_depth, range_view_pcd_xyz, range_view_pcd_sem = self.pcd.do_range_projection(points, semantics)
         if self.cfg.MODEL.LIDAR.ENABLED:
             single_element_t['range_view_pcd_xyzd'] = np.concatenate(
@@ -300,6 +304,7 @@ class CarlaDataset(Dataset):
         if self.cfg.LIDAR_SEG.ENABLED:
             single_element_t['range_view_pcd_seg'] = range_view_pcd_sem[None].astype(int)
 
+        # data type for point-pillar
         if self.cfg.MODEL.LIDAR.POINT_PILLAR.ENABLED:
             max_num_points = int(self.cfg.POINTS.N_PER_SECOND / CARLA_FPS)
             fixed_points = np.empty((max_num_points, 3), dtype=np.float32)
@@ -308,7 +313,7 @@ class CarlaDataset(Dataset):
             single_element_t['points_raw'] = fixed_points
             single_element_t['num_points'] = num_points
 
-        # Load voxels
+        # Load voxels, saved as voxel coordinates.
         if self.cfg.VOXEL_SEG.ENABLED:
             voxel_data = np.load(
                 os.path.join(self.dataset_path, run_id, data_row['voxel_path'])
@@ -321,7 +326,7 @@ class CarlaDataset(Dataset):
             voxels[voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2]] = voxel_semantics
             single_element_t['voxel'] = voxels[None]
 
-        # load depth_semantic image
+        # load depth and semantic image
         depth_semantic = Image.open(
             os.path.join(self.dataset_path, run_id, data_row['depth_semantic_path'])
         )
@@ -341,6 +346,7 @@ class CarlaDataset(Dataset):
         if self.cfg.DEPTH.ENABLED:
             depth_color = depth_semantic[..., :-1].transpose((2, 0, 1)).astype(float)
             single_element_t['depth_color'] = depth_color / 255.0
+            # in carla, depth is saved in rgb-channel
             depth = (256 ** 2 * depth_color[0] + 256 * depth_color[1] + depth_color[2]) / (256 ** 3 - 1)
             depth[depth > 0.999] = -1
             single_element_t['depth'] = depth[None]

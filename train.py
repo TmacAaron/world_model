@@ -9,9 +9,9 @@ import lightning.pytorch as pl
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.callbacks import ModelSummary, LearningRateMonitor
 
-from mile.config import get_parser, get_cfg
-from mile.data.dataset import DataModule
-from mile.trainer import WorldModelTrainer
+from muvo.config import get_parser, get_cfg
+from muvo.data.dataset import DataModule
+from muvo.trainer import WorldModelTrainer
 
 from clearml import Task, Dataset, Model
 
