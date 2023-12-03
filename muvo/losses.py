@@ -373,3 +373,42 @@ class CDLoss(nn.Module):
         xy = torch.bmm(x, y.transpose(1, 2))
         dist = x_norm - 2 * xy + y_norm.transpose(1, 2)
         return dist
+
+
+class DiceLoss(nn.Module):
+    def __init__(self, reduction='mean', eps=1e-3, naive_dice=True):
+        super().__init__()
+        self.reduction = reduction
+        self.eps = eps
+        self.naive_dice = naive_dice
+
+    def forward(self, prediction, target):
+        b, s, c, x, y, z = prediction.shape
+
+        prediction = prediction.view(b * s, c, x, y, z)
+        target = target.view(b * s, x, y, z)
+
+        # Get softmax probabilities
+        prediction = F.softmax(prediction, dim=1)
+
+        # Compute empty and nonempty probabilities
+        empty_probs = prediction[:, 0, :, :, :]
+        nonempty_probs = 1 - empty_probs
+
+        # Remove unknown voxels
+        nonempty_target = target != 0
+        nonempty_target = nonempty_target.float().flatten(1)
+        nonempty_probs = nonempty_probs.flatten(1)
+
+        a = torch.sum(nonempty_probs * nonempty_target, 1)
+        if self.naive_dice:
+            b = torch.sum(nonempty_probs, 1)
+            c = torch.sum(nonempty_target, 1)
+            d = (2 * a + self.eps) / (b + c + self.eps)
+        else:
+            b = torch.sum(nonempty_probs * nonempty_probs, 1) + self.eps
+            c = torch.sum(nonempty_target * nonempty_target, 1) + self.eps
+            d = (2 * a) / (b + c)
+        loss = 1 - d
+
+        return loss.mean()

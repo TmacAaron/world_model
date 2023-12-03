@@ -10,7 +10,7 @@ from torchmetrics import JaccardIndex
 from muvo.config import get_cfg
 from muvo.models.mile import Mile
 from muvo.losses import \
-    SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss, SemScalLoss, GeoScalLoss
+    SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss, SemScalLoss, GeoScalLoss, DiceLoss
 from muvo.metrics import SSCMetrics, SSIMMetric, CDMetric, PSNRMetric
 from muvo.models.preprocess import PreProcess
 from muvo.utils.geometry_utils import PointCloud, compute_pcd_transformation
@@ -188,6 +188,7 @@ class WorldModelTrainer(pl.LightningModule):
             )
             self.sem_scal_loss = SemScalLoss()
             self.geo_scal_loss = GeoScalLoss()
+            self.dice_loss = DiceLoss(eps=1)
             for metrics_val, metrics_val_imagine in zip(self.metrics_vals, self.metrics_vals_imagine):
                 metrics_val['ssc'] = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
                 metrics_val_imagine['ssc'] = SSCMetrics(self.cfg.VOXEL_SEG.N_CLASSES)
@@ -380,9 +381,14 @@ class WorldModelTrainer(pl.LightningModule):
                     prediction=output[f'voxel_{downsampling_factor}'],
                     target=batch[f'voxel_label_{downsampling_factor}']
                 )
+                dice_loss = self.dice_loss(
+                    prediction=output[f'voxel_{downsampling_factor}'],
+                    target=batch[f'voxel_label_{downsampling_factor}']
+                )
                 losses[f'voxel_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * voxel_loss
                 losses[f'sem_scal_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * sem_scal_loss
                 losses[f'geo_scal_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * geo_scal_loss
+                losses[f'dice_{downsampling_factor}'] = discount * self.cfg.LOSSES.WEIGHT_VOXEL * dice_loss
 
         if self.cfg.MODEL.REWARD.ENABLED:
             reward_loss = self.action_loss(output['reward'], batch['reward'])
