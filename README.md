@@ -97,3 +97,7 @@ python prediction.py --config-file muvo/configs/prediction.yml
 ```
 The config file is the same as in training.\
 In `file 'muvo/data/dataset.py', class 'DataModule', function 'setup'`, you can change the test dataset/sampler type.
+
+## Related Projects
+Our code is based on [MILE](https://github.com/wayveai/mile). 
+And thanks to [CARLA-Roach](https://github.com/zhejz/carla-roach) for making a gym wrapper around CARLA.
