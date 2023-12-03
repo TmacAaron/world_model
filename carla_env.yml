@@ -1,4 +1,4 @@
-name: carla
+name: muvo
 channels:
   - pytorch
   - nvidia
