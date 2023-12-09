@@ -9,6 +9,7 @@ from torchmetrics import JaccardIndex
 
 from muvo.config import get_cfg
 from muvo.models.mile import Mile
+from muvo.models.muvo import MUVO
 from muvo.losses import \
     SegmentationLoss, KLLoss, RegressionLoss, SpatialRegressionLoss, VoxelLoss, SSIMLoss, SemScalLoss, GeoScalLoss, DiceLoss
 from muvo.metrics import SSCMetrics, SSIMMetric, CDMetric, PSNRMetric
@@ -40,7 +41,8 @@ class WorldModelTrainer(pl.LightningModule):
         self.preprocess = PreProcess(self.cfg)
 
         # Model
-        self.model = Mile(self.cfg)
+        # self.model = Mile(self.cfg)
+        self.model = MUVO(self.cfg) if self.cfg.MODEL.TRANSFORMER_TRANSITION.ENABLED else Mile(self.cfg)
         self.load_pretrained_weights()
 
         # self.metrics_vals = [dict() for _ in range(len(self.val_dataloader()))]
@@ -511,8 +513,8 @@ class WorldModelTrainer(pl.LightningModule):
             self.vis_step = self.global_step
         else:
             visualisation_criteria = batch_idx == 0
-        if visualisation_criteria:
-            self.visualise(batch, output, output_imagine, batch_idx, prefix=prefix)
+        # if visualisation_criteria:
+        #     self.visualise(batch, output, output_imagine, batch_idx, prefix=prefix)
 
     def loss_reducing(self, loss):
         total_loss = sum([x for x in loss.values()])

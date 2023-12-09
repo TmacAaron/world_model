@@ -107,7 +107,7 @@ def main():
         limit_val_batches=3,
         # use_distributed_sampler=replace_sampler_ddp,
         accumulate_grad_batches=cfg.OPTIMIZER.ACCUMULATE_GRAD_BATCHES,
-        num_sanity_val_steps=2,
+        num_sanity_val_steps=0,
         profiler='simple',
     )
 

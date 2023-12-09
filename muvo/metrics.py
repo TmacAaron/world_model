@@ -113,11 +113,11 @@ class SSCMetrics:
 
     def get_stats(self):
         return {
-            "precision": self.precision,
-            "recall": self.recall,
-            "iou": self.iou,
+            "precision": float(self.precision),
+            "recall": float(self.recall),
+            "iou": float(self.iou),
             "iou_ssc": self.iou_ssc,
-            "iou_ssc_mean": torch.mean(self.iou_ssc[1:]),
+            "iou_ssc_mean": float(torch.mean(self.iou_ssc[1:])),
         }
 
     def reset(self):
@@ -227,7 +227,7 @@ class SSIMMetric:
         self.ssim_avg = self.ssim_score / self.count
 
     def get_stat(self):
-        return self.ssim_avg
+        return float(self.ssim_avg)
 
     def reset(self):
         self.ssim_score = 0
@@ -250,7 +250,7 @@ class CDMetric:
         self.avg_cost = self.total_cost / self.count
 
     def get_stat(self):
-        return self.avg_cost
+        return float(self.avg_cost)
 
     def reset(self):
         self.total_cost = 0
@@ -309,7 +309,7 @@ class PSNRMetric:
         return psnr
 
     def get_stat(self):
-        return self.avg_psnr
+        return float(self.avg_psnr)
 
     def reset(self):
         self.total_psnr = 0

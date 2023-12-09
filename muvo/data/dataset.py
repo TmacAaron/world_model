@@ -38,13 +38,13 @@ class DataModule(pl.LightningDataModule):
         # )
         # mutil validation dataset
         self.val_dataset_0 = CarlaDataset(
-            self.cfg, mode='val0', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_1 = CarlaDataset(
-            self.cfg, mode='val1', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_2 = CarlaDataset(
-            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.test_dataset = CarlaDataset(
             self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
@@ -98,15 +98,15 @@ class DataModule(pl.LightningDataModule):
                 drop_last=True,
                 sampler=self.val_sampler_1,
             ),
-            DataLoader(
-                self.val_dataset_2,
-                batch_size=self.batch_size,
-                shuffle=False,
-                num_workers=self.cfg.N_WORKERS,
-                pin_memory=True,
-                drop_last=True,
-                sampler=self.val_sampler_2,
-            ),
+            # DataLoader(
+            #     self.val_dataset_2,
+            #     batch_size=self.batch_size,
+            #     shuffle=False,
+            #     num_workers=self.cfg.N_WORKERS,
+            #     pin_memory=True,
+            #     drop_last=True,
+            #     sampler=self.val_sampler_2,
+            # ),
         ]
 
     def test_dataloader(self):
@@ -129,15 +129,15 @@ class DataModule(pl.LightningDataModule):
                 drop_last=True,
                 sampler=self.test_sampler_1,
             ),
-            DataLoader(
-                self.test_dataset,
-                batch_size=self.batch_size,
-                shuffle=False,
-                num_workers=self.cfg.N_WORKERS,
-                pin_memory=True,
-                drop_last=True,
-                sampler=self.test_sampler_2,
-            ),
+            # DataLoader(
+            #     self.test_dataset,
+            #     batch_size=self.batch_size,
+            #     shuffle=False,
+            #     num_workers=self.cfg.N_WORKERS,
+            #     pin_memory=True,
+            #     drop_last=True,
+            #     sampler=self.test_sampler_2,
+            # ),
         ]
 
 

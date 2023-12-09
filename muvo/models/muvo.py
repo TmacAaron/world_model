@@ -5,11 +5,10 @@ import timm
 
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from muvo.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
-from muvo.models.common import BevDecoder, Decoder, RouteEncode, Policy, VoxelDecoder1, ConvDecoder, \
-    PositionEmbeddingSine, DecoderDS, PointPillarNet, DownSampleConv
+from muvo.models.common import BevDecoder, Decoder, RouteEncode, PositionEmbeddingSine, DecoderDS, PointPillarNet
+from muvo.models.decoder import PolicyDecoder, ConvDecoder2D, ConvDecoder3D
 from muvo.models.frustum_pooling import FrustumPooling
-from muvo.layers.layers import BasicBlock
-from muvo.models.transition import RSSM
+from muvo.models.transition_td import RSSMTD
 
 
 class MUVO(nn.Module):
@@ -18,7 +17,6 @@ class MUVO(nn.Module):
         self.cfg = cfg
         self.receptive_field = cfg.RECEPTIVE_FIELD
 
-        embedding_n_channels = self.cfg.MODEL.EMBEDDING_DIM
         # Image feature encoder
         self.encoder = timm.create_model(
             cfg.MODEL.ENCODER.NAME, pretrained=True, features_only=True, out_indices=[2, 3, 4],
@@ -91,7 +89,7 @@ class MUVO(nn.Module):
 
         # Route map
         if self.cfg.MODEL.ROUTE.ENABLED:
-            self.backbone_route = RouteEncode(self.cfg.MODEL.ROUTE.CHANNELS, self.cfg.MODEL.TRANSFORMER.CHANNELS)
+            self.backbone_route = RouteEncode(self.cfg.MODEL.TRANSFORMER.CHANNELS, self.cfg.MODEL.ROUTE.BACKBONE)
             n_type += 1
 
         # Measurements
@@ -148,26 +146,24 @@ class MUVO(nn.Module):
         self.receptive_field = self.cfg.RECEPTIVE_FIELD
         if self.cfg.MODEL.TRANSITION.ENABLED:
             # Recurrent state sequence module
-            self.rssm = RSSM(
-                embedding_dim=embedding_n_channels,
+            self.rssm = RSSMTD(
+                embedding_dim=self.cfg.MODEL.TRANSFORMER.CHANNELS,
                 action_dim=self.cfg.MODEL.ACTION_DIM,
-                hidden_state_dim=self.cfg.MODEL.TRANSITION.HIDDEN_STATE_DIM,
-                state_dim=self.cfg.MODEL.TRANSITION.STATE_DIM,
-                action_latent_dim=self.cfg.MODEL.TRANSITION.ACTION_LATENT_DIM,
+                hidden_state_dim=self.cfg.MODEL.TRANSFORMER.CHANNELS,
+                state_dim=self.cfg.MODEL.TRANSFORMER.CHANNELS,
                 receptive_field=self.receptive_field,
                 use_dropout=self.cfg.MODEL.TRANSITION.USE_DROPOUT,
                 dropout_probability=self.cfg.MODEL.TRANSITION.DROPOUT_PROBABILITY,
             )
 
         # Policy
-        if self.cfg.MODEL.TRANSITION.ENABLED:
-            state_dim = self.cfg.MODEL.TRANSITION.HIDDEN_STATE_DIM + self.cfg.MODEL.TRANSITION.STATE_DIM
-        else:
-            state_dim = embedding_n_channels
-        self.policy = Policy(in_channels=state_dim)
+        state_dim = self.cfg.MODEL.TRANSFORMER.CHANNELS
+
+        self.policy = PolicyDecoder(in_channels=state_dim)
 
         # Bird's-eye view semantic segmentation
         if self.cfg.SEMANTIC_SEG.ENABLED:
+            self.bev_fc = nn.Conv1d(state_dim, 1, 1)
             self.bev_decoder = BevDecoder(
                 latent_n_channels=state_dim,
                 semantic_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
@@ -176,86 +172,55 @@ class MUVO(nn.Module):
 
         # RGB reconstruction
         if self.cfg.EVAL.RGB_SUPERVISION:
-            # self.rgb_decoder = BevDecoder(
-            #     latent_n_channels=state_dim,
-            #     semantic_n_channels=3,
-            #     constant_size=(5, 13),
-            #     head='rgb',
-            # )
-            self.rgb_decoder = ConvDecoder(
-                latent_n_channels=state_dim,
-                out_channels=3,
-                constant_size=(5, 13),
+            self.rgb_decoder = ConvDecoder2D(
+                input_n_channels=state_dim,
+                out_n_channels=3,
+                n_basic_conv=2,
                 head='rgb'
             )
 
         # lidar reconstruction in range-view
         if self.cfg.LIDAR_RE.ENABLED:
-            self.lidar_re = ConvDecoder(
-                latent_n_channels=state_dim,
-                out_channels=self.cfg.LIDAR_RE.N_CHANNELS,
-                constant_size=(1, 16),
+            self.lidar_re = ConvDecoder2D(
+                input_n_channels=state_dim,
+                out_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
+                n_basic_conv=1,
                 head='lidar_re',
             )
 
         # lidar semantic segmentation
         if self.cfg.LIDAR_SEG.ENABLED:
-            self.lidar_segmentation = ConvDecoder(
-                latent_n_channels=state_dim,
-                out_channels=self.cfg.LIDAR_SEG.N_CLASSES,
-                constant_size=(1, 16),
+            self.lidar_segmentation = ConvDecoder2D(
+                input_n_channels=state_dim,
+                out_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
+                n_basic_conv=1,
                 head='lidar_seg',
             )
 
         # camera semantic segmentation
         if self.cfg.SEMANTIC_IMAGE.ENABLED:
-            self.sem_image_decoder = ConvDecoder(
-                latent_n_channels=state_dim,
-                out_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
-                constant_size=(5, 13),
+            self.sem_image_decoder = ConvDecoder2D(
+                input_n_channels=state_dim,
+                out_n_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
+                n_basic_conv=1,
                 head='sem_image',
             )
 
         # depth camera prediction
         if self.cfg.DEPTH.ENABLED:
-            self.depth_image_decoder = ConvDecoder(
-                latent_n_channels=state_dim,
-                out_channels=1,
-                constant_size=(5, 13),
+            self.depth_image_decoder = ConvDecoder2D(
+                input_n_channels=state_dim,
+                out_n_channels=1,
+                n_basic_conv=1,
                 head='depth',
             )
 
         # Voxel reconstruction
         if self.cfg.VOXEL_SEG.ENABLED:
-            # self.voxel_feature_xy_decoder = BevDecoder(
-            #     latent_n_channels=state_dim,
-            #     semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
-            #     constant_size=(3, 3),
-            #     is_segmentation=False,
-            # )
-            # self.voxel_feature_xz_decoder = BevDecoder(
-            #     latent_n_channels=state_dim,
-            #     semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
-            #     constant_size=(3, 1),
-            #     is_segmentation=False,
-            # )
-            # self.voxel_feature_yz_decoder = BevDecoder(
-            #     latent_n_channels=state_dim,
-            #     semantic_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
-            #     constant_size=(3, 1),
-            #     is_segmentation=False,
-            # )
-            # self.voxel_decoder = VoxelDecoder0(
-            #     input_channels=self.cfg.VOXEL_SEG.DIMENSION,
-            #     n_classes=self.cfg.VOXEL_SEG.N_CLASSES,
-            #     kernel_size=1,
-            #     feature_channels=self.cfg.VOXEL_SEG.DIMENSION,
-            # )
-            self.voxel_decoder = VoxelDecoder1(
-                latent_n_channels=state_dim,
-                semantic_n_channels=self.cfg.VOXEL_SEG.N_CLASSES,
-                feature_channels=self.cfg.VOXEL_SEG.DIMENSION,
-                constant_size=(3, 3, 1),
+            self.voxel_decoder = ConvDecoder3D(
+                input_n_channels=state_dim,
+                out_n_channels=self.cfg.VOXEL_SEG.N_CLASSES,
+                latent_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
             )
 
         # Used during deployment to save last state
@@ -284,70 +249,23 @@ class MUVO(nn.Module):
         b, s = batch['image'].shape[:2]
 
         output = dict()
-        if self.cfg.MODEL.TRANSITION.ENABLED:
-            # Recurrent state sequence module
-            if deployment:
-                action = batch['action']
-            else:
-                action = torch.cat([batch['throttle_brake'], batch['steering']], dim=-1)
-            state_dict = self.rssm(embedding, action, use_sample=not deployment, policy=self.policy)
-
-            if deployment:
-                state_dict = remove_past(state_dict, s)
-                s = 1
-
-            output = {**output, **state_dict}
-            state = torch.cat([state_dict['posterior']['hidden_state'], state_dict['posterior']['sample']], dim=-1)
+        # Recurrent state sequence module
+        if deployment:
+            action = batch['action']
         else:
-            state = embedding
-            state_dict = {}
+            action = torch.cat([batch['throttle_brake'], batch['steering']], dim=-1)
+        state_dict = self.rssm(embedding, action, use_sample=not deployment, policy=self.policy)
+
+        if deployment:
+            state_dict = remove_past(state_dict, s)
+            s = 1
+
+        output = {**output, **state_dict}
+        state = state_dict['posterior']['sample']
 
         state = pack_sequence_dim(state)
-        output_policy = self.policy(state)
-        throttle_brake, steering = torch.split(output_policy, 1, dim=-1)
-        output['throttle_brake'] = unpack_sequence_dim(throttle_brake, b, s)
-        output['steering'] = unpack_sequence_dim(steering, b, s)
 
-        # reconstruction
-        if self.cfg.SEMANTIC_SEG.ENABLED:
-            if (not deployment) or (deployment and DISPLAY_SEGMENTATION):
-                bev_decoder_output = self.bev_decoder(state)
-                bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, s)
-                output = {**output, **bev_decoder_output}
-
-        if self.cfg.EVAL.RGB_SUPERVISION:
-            rgb_decoder_output = self.rgb_decoder(state)
-            rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, s)
-            output = {**output, **rgb_decoder_output}
-
-        if self.cfg.LIDAR_RE.ENABLED:
-            lidar_output = self.lidar_re(state)
-            lidar_output = unpack_sequence_dim(lidar_output, b, s)
-            output = {**output, **lidar_output}
-
-        if self.cfg.LIDAR_SEG.ENABLED:
-            lidar_seg_output = self.lidar_segmentation(state)
-            lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, s)
-            output = {**output, **lidar_seg_output}
-
-        if self.cfg.SEMANTIC_IMAGE.ENABLED:
-            sem_image_output = self.sem_image_decoder(state)
-            sem_image_output = unpack_sequence_dim(sem_image_output, b, s)
-            output = {**output, **sem_image_output}
-
-        if self.cfg.DEPTH.ENABLED:
-            depth_image_output = self.depth_image_decoder(state)
-            depth_image_output = unpack_sequence_dim(depth_image_output, b, s)
-            output = {**output, **depth_image_output}
-
-        if self.cfg.VOXEL_SEG.ENABLED:
-            # voxel_feature_xy = self.voxel_feature_xy_decoder(state)
-            # voxel_feature_xz = self.voxel_feature_xz_decoder(state)
-            # voxel_feature_yz = self.voxel_feature_yz_decoder(state)
-            # voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
-            voxel_decoder_output = self.voxel_decoder(state)
-            voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, s)
-            output = {**output, **voxel_decoder_output}
+        output = self.decode(state, output, b, s)
 
         return output, state_dict
 
@@ -419,9 +337,12 @@ class MUVO(nn.Module):
         tokens.extend([image_tokens, lidar_tokens])
 
         # get other features
+        type_n = 2
         if self.cfg.MODEL.ROUTE.ENABLED:
             route_map = pack_sequence_dim(batch['route_map'])
-            route_map_tokens = self.backbone_route(route_map).permute(2, 0, 1)
+            route_map_features = self.backbone_route(route_map)[None]
+            route_map_tokens = route_map_features + self.type_embedding[:, :, :, type_n]
+            type_n += 1
             tokens.append(route_map_tokens)
 
         if self.cfg.MODEL.MEASUREMENTS.ENABLED:
@@ -430,21 +351,82 @@ class MUVO(nn.Module):
             route_command_next = pack_sequence_dim(batch['route_command_next'])
             gps_vector_next = pack_sequence_dim(batch['gps_vector_next'])
 
-            command_tokens = self.command_encoder(route_command).permute(2, 0, 1)
+            command_features = self.command_encoder(route_command)[None]
+            command_tokens = command_features + self.type_embedding[:, :, :, type_n]
+            type_n += 1
 
-            command_next_tokens = self.command_next_encoder(route_command_next).permute(2, 0, 1)
+            command_next_features = self.command_next_encoder(route_command_next)[None]
+            command_next_tokens = command_next_features + self.type_embedding[:, :, :, type_n]
+            type_n += 1
 
-            gps_tokens = self.gps_encoder(torch.cat([gps_vector, gps_vector_next], dim=-1)).permute(2, 0, 1)
+            gps_features = self.gps_encoder(torch.cat([gps_vector, gps_vector_next], dim=-1))[None]
+            gps_tokens = gps_features + self.type_embedding[:, :, :, type_n]
+            type_n += 1
             tokens.extend([command_tokens, command_next_tokens, gps_tokens])
 
-        speed_tokens = self.speed_enc(speed / self.speed_normalisation).permute(2, 0, 1)
+        speed_features = self.speed_enc(speed / self.speed_normalisation)[None]
+        speed_tokens = speed_features + self.type_embedding[:, :, :, -1]
         tokens.append(speed_tokens)
 
-        # concatenate image and lidar tokens
-        tokens_out = self.transformer_encoder(tokens)
+        tokens = torch.cat(tokens, dim=0)
 
-        embedding = unpack_sequence_dim(tokens, b, s)
-        return embedding
+        # concatenate image and lidar tokens
+        tokens_out = self.transformer_encoder(tokens).permute(1, 2, 0)
+
+        tokens_out = unpack_sequence_dim(tokens_out, b, s)
+        return tokens_out
+
+    def decode(self, state, output, b, s):
+        C = state.shape[1]
+        camera_n = 26 * 10
+        lidar_n = 64 * 4
+        voxel_n = 12 * 12 * 4
+        camera_state = state[:, :, :camera_n].reshape(b*s, C, 10, 26)
+        lidar_state = state[:, :, camera_n: camera_n + lidar_n].reshape(b*s, C, 4, 64)
+        voxel_state = state[:, :, camera_n + lidar_n: camera_n + lidar_n + voxel_n].reshape(b*s, C, 12, 12, 4)
+        policy_state = state[:, :, -1]
+        output_policy = self.policy(policy_state)
+        throttle_brake, steering = torch.split(output_policy, 1, dim=-1)
+        output['throttle_brake'] = unpack_sequence_dim(throttle_brake, b, s)
+        output['steering'] = unpack_sequence_dim(steering, b, s)
+
+        # reconstruction
+        if self.cfg.SEMANTIC_SEG.ENABLED:
+            bev_decoder_output = self.bev_decoder(self.bev_fc(state))
+            bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, s)
+            output = {**output, **bev_decoder_output}
+
+        if self.cfg.EVAL.RGB_SUPERVISION:
+            rgb_decoder_output = self.rgb_decoder(camera_state)
+            rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, s)
+            output = {**output, **rgb_decoder_output}
+
+        if self.cfg.LIDAR_RE.ENABLED:
+            lidar_output = self.lidar_re(lidar_state)
+            lidar_output = unpack_sequence_dim(lidar_output, b, s)
+            output = {**output, **lidar_output}
+
+        if self.cfg.LIDAR_SEG.ENABLED:
+            lidar_seg_output = self.lidar_segmentation(lidar_state)
+            lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, s)
+            output = {**output, **lidar_seg_output}
+
+        if self.cfg.SEMANTIC_IMAGE.ENABLED:
+            sem_image_output = self.sem_image_decoder(camera_state)
+            sem_image_output = unpack_sequence_dim(sem_image_output, b, s)
+            output = {**output, **sem_image_output}
+
+        if self.cfg.DEPTH.ENABLED:
+            depth_image_output = self.depth_image_decoder(camera_state)
+            depth_image_output = unpack_sequence_dim(depth_image_output, b, s)
+            output = {**output, **depth_image_output}
+
+        if self.cfg.VOXEL_SEG.ENABLED:
+            voxel_decoder_output = self.voxel_decoder(voxel_state)
+            voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, s)
+            output = {**output, **voxel_decoder_output}
+
+        return output
 
     def observe_and_imagine(self, batch, predict_action=False, future_horizon=None):
         """ This is only used for visualisation of future prediction"""
@@ -546,12 +528,12 @@ class MUVO(nn.Module):
             'hidden': [],
             'sample': [],
         }
-        h_t = batch['hidden_state'] #(b, c)
-        sample_t = batch['sample']  #(b, s)
-        b = h_t.shape[0]
+        h_t = batch['hidden_state'].permute(2, 0, 1)  # N, B, C
+        sample_t = batch['sample'].permute(2, 0, 1)  # N, B, C
+        b = h_t.shape[1]
         for t in range(future_horizon):
             if predict_action:
-                action_t = self.policy(torch.cat([h_t, sample_t], dim=-1))
+                action_t = self.policy(sample_t[-1])
             else:
                 action_t = torch.cat([batch['throttle_brake'][:, t], batch['steering'][:, t]], dim=-1)
             prior_t = self.rssm.imagine_step(
@@ -559,58 +541,16 @@ class MUVO(nn.Module):
             )
             sample_t = prior_t['sample']
             h_t = prior_t['hidden_state']
-            output_imagine['action'].append(action_t)
-            output_imagine['state'].append(torch.cat([h_t, sample_t], dim=-1))
+            output_imagine['action'].append(action_t[None])
+            output_imagine['state'].append(sample_t)
             output_imagine['hidden'].append(h_t)
             output_imagine['sample'].append(sample_t)
 
         for k, v in output_imagine.items():
-            output_imagine[k] = torch.stack(v, dim=1)
+            output_imagine[k] = torch.stack(v, dim=1).permute(2, 1, 3, 0)  # N, S, B, C -> B, S, C, N
 
         state = pack_sequence_dim(output_imagine['state'])
-        output_policy = self.policy(state)
-        throttle_brake, steering = torch.split(output_policy, 1, dim=-1)
-        output_imagine['throttle_brake'] = unpack_sequence_dim(throttle_brake, b, future_horizon)
-        output_imagine['steering'] = unpack_sequence_dim(steering, b, future_horizon)
-
-        if self.cfg.SEMANTIC_SEG.ENABLED:
-            bev_decoder_output = self.bev_decoder(state)
-            bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, future_horizon)
-            output_imagine = {**output_imagine, **bev_decoder_output}
-
-        if self.cfg.EVAL.RGB_SUPERVISION:
-            rgb_decoder_output = self.rgb_decoder(state)
-            rgb_decoder_output = unpack_sequence_dim(rgb_decoder_output, b, future_horizon)
-            output_imagine = {**output_imagine, **rgb_decoder_output}
-
-        if self.cfg.LIDAR_RE.ENABLED:
-            lidar_output = self.lidar_re(state)
-            lidar_output = unpack_sequence_dim(lidar_output, b, future_horizon)
-            output_imagine = {**output_imagine, **lidar_output}
-
-        if self.cfg.LIDAR_SEG.ENABLED:
-            lidar_seg_output = self.lidar_segmentation(state)
-            lidar_seg_output = unpack_sequence_dim(lidar_seg_output, b, future_horizon)
-            output_imagine = {**output_imagine, **lidar_seg_output}
-
-        if self.cfg.SEMANTIC_IMAGE.ENABLED:
-            sem_image_output = self.sem_image_decoder(state)
-            sem_image_output = unpack_sequence_dim(sem_image_output, b, future_horizon)
-            output_imagine = {**output_imagine, **sem_image_output}
-
-        if self.cfg.DEPTH.ENABLED:
-            depth_image_output = self.depth_image_decoder(state)
-            depth_image_output = unpack_sequence_dim(depth_image_output, b, future_horizon)
-            output_imagine = {**output_imagine, **depth_image_output}
-
-        if self.cfg.VOXEL_SEG.ENABLED:
-            # voxel_feature_xy = self.voxel_feature_xy_decoder(state)
-            # voxel_feature_xz = self.voxel_feature_xz_decoder(state)
-            # voxel_feature_yz = self.voxel_feature_yz_decoder(state)
-            # voxel_decoder_output = self.voxel_decoder(voxel_feature_xy, voxel_feature_xz, voxel_feature_yz)
-            voxel_decoder_output = self.voxel_decoder(state)
-            voxel_decoder_output = unpack_sequence_dim(voxel_decoder_output, b, future_horizon)
-            output_imagine = {**output_imagine, **voxel_decoder_output}
+        output_imagine = self.decode(state, output_imagine, b, future_horizon)
 
         return output_imagine
 

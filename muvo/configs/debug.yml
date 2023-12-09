@@ -52,8 +52,11 @@ LOSSES:
   SSIM: False
 
 MODEL:
+  TRANSFORMER_TRANSITION:
+    ENABLED: True
   EMBEDDING_DIM: 512
   TRANSFORMER:
+    CHANNELS: 288
     ENABLED: True
     BEV: False
     LARGE: False
@@ -64,14 +67,14 @@ MODEL:
 EVAL:
   RGB_SUPERVISION: True
 
-RECEPTIVE_FIELD: 2
-FUTURE_HORIZON: 1
+RECEPTIVE_FIELD: 1
+FUTURE_HORIZON: 2
 
 PRETRAINED:
 #  PATH: 'weights/epoch=37-step=57600.ckpt'
 #  PATH: 'weights/epoch=65-step=99000.ckpt'
-  PATH: 'weights/epoch=3-step=50000.ckpt'
-#  PATH: ''
+#  PATH: 'weights/epoch=3-step=50000.ckpt'
+  PATH: ''
 #
 #DATASET:
 #  DATAROOT: ''
