@@ -163,99 +163,99 @@ class MUVO(nn.Module):
 
         # Bird's-eye view semantic segmentation
         if self.cfg.SEMANTIC_SEG.ENABLED:
-            # self.bev_decoder = ConvDecoder2D(
-            #     input_n_channels=state_dim,
-            #     out_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
-            #     n_basic_conv=1,
-            #     head='bev',
-            # )
-            self.bev_decoder = StyleDecoder2D(
-                latent_n_channels=state_dim,
+            self.bev_decoder = ConvDecoder2D(
+                input_n_channels=state_dim,
                 out_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
-                constant_size=(12, 12),
                 n_basic_conv=1,
                 head='bev',
             )
+            # self.bev_decoder = StyleDecoder2D(
+            #     latent_n_channels=state_dim,
+            #     out_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
+            #     constant_size=(12, 12),
+            #     n_basic_conv=1,
+            #     head='bev',
+            # )
 
         # RGB reconstruction
         if self.cfg.EVAL.RGB_SUPERVISION:
-            # self.rgb_decoder = ConvDecoder2D(
-            #     input_n_channels=state_dim,
-            #     out_n_channels=3,
-            #     n_basic_conv=2,
-            #     head='rgb'
-            # )
-            self.rgb_decoder = StyleDecoder2D(
-                latent_n_channels=state_dim,
+            self.rgb_decoder = ConvDecoder2D(
+                input_n_channels=state_dim,
                 out_n_channels=3,
-                constant_size=(10, 26),
                 n_basic_conv=2,
                 head='rgb'
             )
+            # self.rgb_decoder = StyleDecoder2D(
+            #     latent_n_channels=state_dim,
+            #     out_n_channels=3,
+            #     constant_size=(10, 26),
+            #     n_basic_conv=2,
+            #     head='rgb'
+            # )
 
         # lidar reconstruction in range-view
         if self.cfg.LIDAR_RE.ENABLED:
-            # self.lidar_re = ConvDecoder2D(
-            #     input_n_channels=state_dim,
-            #     out_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
-            #     n_basic_conv=1,
-            #     head='lidar_re',
-            # )
-            self.lidar_re = StyleDecoder2D(
-                latent_n_channels=state_dim,
+            self.lidar_re = ConvDecoder2D(
+                input_n_channels=state_dim,
                 out_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
-                constant_size=(4, 64),
                 n_basic_conv=1,
-                head='lidar_re'
+                head='lidar_re',
             )
+            # self.lidar_re = StyleDecoder2D(
+            #     latent_n_channels=state_dim,
+            #     out_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
+            #     constant_size=(4, 64),
+            #     n_basic_conv=1,
+            #     head='lidar_re'
+            # )
 
         # lidar semantic segmentation
         if self.cfg.LIDAR_SEG.ENABLED:
-            # self.lidar_segmentation = ConvDecoder2D(
-            #     input_n_channels=state_dim,
-            #     out_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
-            #     n_basic_conv=1,
-            #     head='lidar_seg',
-            # )
-            self.lidar_segmentation = StyleDecoder2D(
-                latent_n_channels=state_dim,
+            self.lidar_segmentation = ConvDecoder2D(
+                input_n_channels=state_dim,
                 out_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
-                constant_size=(4, 64),
                 n_basic_conv=1,
                 head='lidar_seg',
             )
+            # self.lidar_segmentation = StyleDecoder2D(
+            #     latent_n_channels=state_dim,
+            #     out_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
+            #     constant_size=(4, 64),
+            #     n_basic_conv=1,
+            #     head='lidar_seg',
+            # )
 
         # camera semantic segmentation
         if self.cfg.SEMANTIC_IMAGE.ENABLED:
-            # self.sem_image_decoder = ConvDecoder2D(
-            #     input_n_channels=state_dim,
-            #     out_n_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
-            #     n_basic_conv=2,
-            #     head='sem_image',
-            # )
-            self.sem_image_decoder = StyleDecoder2D(
-                latent_n_channels=state_dim,
+            self.sem_image_decoder = ConvDecoder2D(
+                input_n_channels=state_dim,
                 out_n_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
-                constant_size=(10, 26),
                 n_basic_conv=2,
                 head='sem_image',
             )
+            # self.sem_image_decoder = StyleDecoder2D(
+            #     latent_n_channels=state_dim,
+            #     out_n_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
+            #     constant_size=(10, 26),
+            #     n_basic_conv=2,
+            #     head='sem_image',
+            # )
 
         # depth camera prediction
         if self.cfg.DEPTH.ENABLED:
-            # self.depth_image_decoder = ConvDecoder2D(
-            #     input_n_channels=state_dim,
-            #     out_n_channels=1,
-            #     n_basic_conv=2,
-            #     head='depth',
-            # )
-            self.depth_image_decoder = StyleDecoder2D(
-                latent_n_channels=state_dim,
+            self.depth_image_decoder = ConvDecoder2D(
+                input_n_channels=state_dim,
                 out_n_channels=1,
-                constant_size=(10, 26),
                 n_basic_conv=2,
                 head='depth',
             )
+            # self.depth_image_decoder = StyleDecoder2D(
+            #     latent_n_channels=state_dim,
+            #     out_n_channels=1,
+            #     constant_size=(10, 26),
+            #     n_basic_conv=2,
+            #     head='depth',
+            # )
 
         # Voxel reconstruction
         if self.cfg.VOXEL_SEG.ENABLED:

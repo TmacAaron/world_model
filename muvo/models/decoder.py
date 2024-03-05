@@ -54,8 +54,8 @@ class ConvDecoder2D(nn.Module):
         self.trans_conv1 = nn.Sequential(
             nn.ConvTranspose2d(n_channels, 256, kernel_size=6, stride=2, padding=2),
             activation(),
-            nn.Conv2d(256, 256, kernel_size=5, stride=1, padding=2),
-            activation(),
+            # nn.Conv2d(256, 256, kernel_size=5, stride=1, padding=2),
+            # activation(),
         )
         self.head_4 = head_module(in_channels=256, n_classes=out_n_channels, downsample_factor=4)
         # 256 x 80 x 208
@@ -63,8 +63,8 @@ class ConvDecoder2D(nn.Module):
         self.trans_conv2 = nn.Sequential(
             nn.ConvTranspose2d(256, 128, kernel_size=6, stride=2, padding=2),
             activation(),
-            nn.Conv2d(128, 128, kernel_size=5, stride=1, padding=2),
-            activation(),
+            # nn.Conv2d(128, 128, kernel_size=5, stride=1, padding=2),
+            # activation(),
         )
         self.head_2 = head_module(in_channels=128, n_classes=out_n_channels, downsample_factor=2)
         # 128 x 160 x 416
@@ -72,8 +72,8 @@ class ConvDecoder2D(nn.Module):
         self.trans_conv3 = nn.Sequential(
             nn.ConvTranspose2d(128, 64, kernel_size=6, stride=2, padding=2),
             activation(),
-            nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
-            activation(),
+            # nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
+            # activation(),
         )
         self.head_1 = head_module(in_channels=64, n_classes=out_n_channels, downsample_factor=1)
         # 64 x 320 x 832
@@ -110,8 +110,8 @@ class ConvDecoder3D(nn.Module):
         self.trans_conv1 = nn.Sequential(
             nn.ConvTranspose3d(n_channels, n_channels // 2, kernel_size=6, stride=2, padding=2),
             activation(),
-            nn.Conv3d(n_channels // 2, n_channels // 2, kernel_size=5, stride=1, padding=2),
-            activation(),
+            # nn.Conv3d(n_channels // 2, n_channels // 2, kernel_size=5, stride=1, padding=2),
+            # activation(),
         )
         self.head_4 = head_module(in_channels=n_channels // 2, n_classes=out_n_channels, downsample_factor=4)
         # 32 x 48 x 48 x 16
@@ -119,8 +119,8 @@ class ConvDecoder3D(nn.Module):
         self.trans_conv2 = nn.Sequential(
             nn.ConvTranspose3d(n_channels // 2, n_channels // 4, kernel_size=6, stride=2, padding=2),
             activation(),
-            nn.Conv3d(n_channels // 4, n_channels // 4, kernel_size=5, stride=1, padding=2),
-            activation(),
+            # nn.Conv3d(n_channels // 4, n_channels // 4, kernel_size=5, stride=1, padding=2),
+            # activation(),
         )
         self.head_2 = head_module(in_channels=n_channels // 4, n_classes=out_n_channels, downsample_factor=2)
         # 16 x 96 x 96 x 32
@@ -128,8 +128,8 @@ class ConvDecoder3D(nn.Module):
         self.trans_conv3 = nn.Sequential(
             nn.ConvTranspose3d(n_channels // 4, n_channels // 8, kernel_size=6, stride=2, padding=2),
             activation(),
-            nn.Conv3d(n_channels // 8, n_channels // 8, kernel_size=5, stride=1, padding=2),
-            activation(),
+            # nn.Conv3d(n_channels // 8, n_channels // 8, kernel_size=5, stride=1, padding=2),
+            # activation(),
         )
         self.head_1 = head_module(in_channels=n_channels // 8, n_classes=out_n_channels, downsample_factor=1)
         # 8 x 192 x 192 x 64

@@ -27,7 +27,7 @@ class DataModule(pl.LightningDataModule):
 
         # Will be populated with self.setup()
         self.train_dataset, self.val_dataset_0, self.val_dataset_1, self.val_dataset_2 = None, None, None, None
-        self.test_dataset = None
+        self.test_dataset_0, self.test_dataset_1, self.test_dataset_2 = None, None, None
 
     def setup(self, stage=None):
         self.train_dataset = CarlaDataset(
@@ -38,34 +38,43 @@ class DataModule(pl.LightningDataModule):
         # )
         # mutil validation dataset
         self.val_dataset_0 = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='val0', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_1 = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='val1', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
         self.val_dataset_2 = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
-        self.test_dataset = CarlaDataset(
-            self.cfg, mode='train', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+
+        self.test_dataset_0 = CarlaDataset(
+            self.cfg, mode='val0', sequence_length=self.sequence_length, dataset_root=self.dataset_root
         )
+        self.test_dataset_1 = CarlaDataset(
+            self.cfg, mode='val1', sequence_length=self.sequence_length, dataset_root=self.dataset_root
+        )
+        self.test_dataset_2 = CarlaDataset(
+            self.cfg, mode='val2', sequence_length=self.sequence_length, dataset_root=self.dataset_root,
+            # towns_filter='Town01', runs_filter='0003'
+        )
+
+        self.train_sampler = None
+        self.val_sampler_0 = range(0, len(self.val_dataset_0), 100)
+        self.val_sampler_1 = range(0, len(self.val_dataset_1), 100)
+        self.val_sampler_2 = range(0, len(self.val_dataset_2), 100)
+        # self.val_sampler = None
+        self.test_sampler_0 = range(0, len(self.test_dataset_0), 100)
+        self.test_sampler_1 = range(0, len(self.test_dataset_1), 100)
+        self.test_sampler_2 = range(0, len(self.test_dataset_2), 10)
 
         print(f'{len(self.train_dataset)} data points in {self.train_dataset.dataset_path}')
         # print(f'{len(self.val_dataset)} data points in {self.val_dataset.dataset_path}')
-        print(f'{len(self.val_dataset_0)} data points in {self.val_dataset_0.dataset_path}')
-        print(f'{len(self.val_dataset_1)} data points in {self.val_dataset_1.dataset_path}')
-        print(f'{len(self.val_dataset_2)} data points in {self.val_dataset_2.dataset_path}')
-        print(f'{len(self.test_dataset)} data points in prediction')
-
-        # self.train_sampler = range(10, len(self.train_dataset))
-        self.train_sampler = None
-        self.val_sampler_0 = range(0, len(self.val_dataset_0), 50)
-        self.val_sampler_1 = range(1500, len(self.val_dataset_1), 50)
-        self.val_sampler_2 = range(3000, len(self.val_dataset_2), 50)
-        # self.val_sampler = None
-        self.test_sampler_0 = range(0, len(self.test_dataset), 900)
-        self.test_sampler_1 = range(1500, len(self.test_dataset), 600)
-        self.test_sampler_2 = range(0, len(self.test_dataset), 150)
+        print(f'{len(list(self.val_sampler_0))} data points in {self.val_dataset_0.dataset_path}')
+        print(f'{len(list(self.val_sampler_1))} data points in {self.val_dataset_1.dataset_path}')
+        print(f'{len(list(self.val_sampler_2))} data points in {self.val_dataset_2.dataset_path}')
+        print(f'{len(list(self.test_sampler_0))} data points in test0')
+        print(f'{len(list(self.test_sampler_1))} data points in test1')
+        print(f'{len(list(self.test_sampler_2))} data points in test2')
 
     def train_dataloader(self):
         return DataLoader(
@@ -98,21 +107,21 @@ class DataModule(pl.LightningDataModule):
                 drop_last=True,
                 sampler=self.val_sampler_1,
             ),
-            # DataLoader(
-            #     self.val_dataset_2,
-            #     batch_size=self.batch_size,
-            #     shuffle=False,
-            #     num_workers=self.cfg.N_WORKERS,
-            #     pin_memory=True,
-            #     drop_last=True,
-            #     sampler=self.val_sampler_2,
-            # ),
+            DataLoader(
+                self.val_dataset_2,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.val_sampler_2,
+            ),
         ]
 
     def test_dataloader(self):
         return [
             DataLoader(
-                self.test_dataset,
+                self.test_dataset_0,
                 batch_size=self.batch_size,
                 shuffle=False,
                 num_workers=self.cfg.N_WORKERS,
@@ -121,7 +130,7 @@ class DataModule(pl.LightningDataModule):
                 sampler=self.test_sampler_0,
         ),
             DataLoader(
-                self.test_dataset,
+                self.test_dataset_1,
                 batch_size=self.batch_size,
                 shuffle=False,
                 num_workers=self.cfg.N_WORKERS,
@@ -129,15 +138,15 @@ class DataModule(pl.LightningDataModule):
                 drop_last=True,
                 sampler=self.test_sampler_1,
             ),
-            # DataLoader(
-            #     self.test_dataset,
-            #     batch_size=self.batch_size,
-            #     shuffle=False,
-            #     num_workers=self.cfg.N_WORKERS,
-            #     pin_memory=True,
-            #     drop_last=True,
-            #     sampler=self.test_sampler_2,
-            # ),
+            DataLoader(
+                self.test_dataset_2,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.cfg.N_WORKERS,
+                pin_memory=True,
+                drop_last=True,
+                sampler=self.test_sampler_2,
+            ),
         ]
 
 
@@ -358,6 +367,8 @@ class CarlaDataset(Dataset):
         single_element_t['steering'] = np.array([steering], dtype=np.float32)
         single_element_t['throttle_brake'] = np.array([throttle_brake], dtype=np.float32)
         single_element_t['speed'] = data_row['speed']
+        # single_element_t['steering'] = np.array([0.0], dtype=np.float32)
+        # single_element_t['throttle_brake'] = np.array([-1.0], dtype=np.float32)
 
         single_element_t['reward'] = np.array([data_row['reward']], dtype=np.float32).clip(-1.0, 1.0)
         single_element_t['value_function'] = np.array([data_row['value']], dtype=np.float32)
