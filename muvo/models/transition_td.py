@@ -25,6 +25,39 @@ class ConvGRUCell(nn.Module):
         return h
 
 
+class ConvGRUCellGlo(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super().__init__()
+        # self.fc_z = nn.Linear(hidden_dim + input_dim, hidden_dim)
+        # self.fc_r = nn.Linear(hidden_dim + input_dim, hidden_dim)
+        # self.fc_q = nn.Linear(hidden_dim + input_dim, hidden_dim)
+        self.conv_z = nn.Conv1d(hidden_dim + input_dim, hidden_dim, 1)
+        self.conv_r = nn.Conv1d(hidden_dim + input_dim, hidden_dim, 1)
+        self.conv_q = nn.Conv1d(hidden_dim + input_dim, hidden_dim, 1)
+
+        self.w = nn.Conv1d(hidden_dim + input_dim, hidden_dim + input_dim, 1)
+
+        self.conv_z_glo = nn.Conv1d(hidden_dim + input_dim, hidden_dim, 1)
+        self.conv_r_glo = nn.Conv1d(hidden_dim + input_dim, hidden_dim, 1)
+        self.conv_q_glo = nn.Conv1d(hidden_dim + input_dim, hidden_dim, 1)
+
+    def forward(self, h, x):
+        h = h.permute(1, 2, 0)  # N, B, C -> B, C, N
+        x = x.permute(1, 2, 0)
+
+        hx = torch.cat([h, x], dim=1)
+
+        glo = torch.sigmoid(self.w(hx)) * hx
+        glo = glo.mean(dim=-1, keepdim=True)
+
+        z = torch.sigmoid(self.conv_z(hx) + self.conv_z_glo(glo))
+        r = torch.sigmoid(self.conv_r(hx) + self.conv_r_glo(glo))
+        q = torch.tanh(self.conv_q(torch.cat([r * h, x], dim=1)) + self.conv_q_glo(glo))
+
+        h = (1 - z) * h + z * q
+        return h.permute(2, 0, 1)  # B, C, N -> N, B, C
+
+
 class RepresentationModelTD(nn.Module):
     def __init__(self, in_channels, latent_dim):
         super().__init__()
@@ -117,7 +150,7 @@ class RSSMTD(nn.Module):
             nn.LeakyReLU(True),
         )
 
-        self.recurrent_model = ConvGRUCell(
+        self.recurrent_model = ConvGRUCellGlo(
             input_dim=hidden_state_dim,
             hidden_dim=hidden_state_dim,
         )
@@ -234,7 +267,7 @@ class RSSMTD(nn.Module):
         latent_action_t = self.prior_action_module(action_t)[None]
 
         input_t = self.pre_gru_net(sample_t)
-        h_t = self.recurrent_model(input_t, h_t)
+        h_t = self.recurrent_model(h_t, input_t)
         h_t_tokens = h_t + self.type_embeddings[:, :, :, 1]
         latent_action_t_tokens = latent_action_t + self.type_embeddings[:, :, :, 2]
         prior_mu_t, prior_sigma_t = self.prior(torch.cat([h_t_tokens, latent_action_t_tokens], dim=0))

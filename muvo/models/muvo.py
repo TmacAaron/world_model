@@ -6,7 +6,7 @@ import timm
 from constants import CARLA_FPS, DISPLAY_SEGMENTATION
 from muvo.utils.network_utils import pack_sequence_dim, unpack_sequence_dim, remove_past
 from muvo.models.common import BevDecoder, Decoder, RouteEncode, PositionEmbeddingSine, DecoderDS, PointPillarNet
-from muvo.models.decoder import PolicyDecoder, ConvDecoder2D, ConvDecoder3D
+from muvo.models.decoder import PolicyDecoder, ConvDecoder2D, ConvDecoder3D, StyleDecoder2D, StyleDecoder3D
 from muvo.models.frustum_pooling import FrustumPooling
 from muvo.models.transition_td import RSSMTD
 
@@ -163,55 +163,97 @@ class MUVO(nn.Module):
 
         # Bird's-eye view semantic segmentation
         if self.cfg.SEMANTIC_SEG.ENABLED:
-            self.bev_fc = nn.Conv1d(state_dim, 1, 1)
-            self.bev_decoder = BevDecoder(
+            # self.bev_decoder = ConvDecoder2D(
+            #     input_n_channels=state_dim,
+            #     out_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
+            #     n_basic_conv=1,
+            #     head='bev',
+            # )
+            self.bev_decoder = StyleDecoder2D(
                 latent_n_channels=state_dim,
-                semantic_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
+                out_n_channels=self.cfg.SEMANTIC_SEG.N_CHANNELS,
+                constant_size=(12, 12),
+                n_basic_conv=1,
                 head='bev',
             )
 
         # RGB reconstruction
         if self.cfg.EVAL.RGB_SUPERVISION:
-            self.rgb_decoder = ConvDecoder2D(
-                input_n_channels=state_dim,
+            # self.rgb_decoder = ConvDecoder2D(
+            #     input_n_channels=state_dim,
+            #     out_n_channels=3,
+            #     n_basic_conv=2,
+            #     head='rgb'
+            # )
+            self.rgb_decoder = StyleDecoder2D(
+                latent_n_channels=state_dim,
                 out_n_channels=3,
+                constant_size=(10, 26),
                 n_basic_conv=2,
                 head='rgb'
             )
 
         # lidar reconstruction in range-view
         if self.cfg.LIDAR_RE.ENABLED:
-            self.lidar_re = ConvDecoder2D(
-                input_n_channels=state_dim,
+            # self.lidar_re = ConvDecoder2D(
+            #     input_n_channels=state_dim,
+            #     out_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
+            #     n_basic_conv=1,
+            #     head='lidar_re',
+            # )
+            self.lidar_re = StyleDecoder2D(
+                latent_n_channels=state_dim,
                 out_n_channels=self.cfg.LIDAR_RE.N_CHANNELS,
+                constant_size=(4, 64),
                 n_basic_conv=1,
-                head='lidar_re',
+                head='lidar_re'
             )
 
         # lidar semantic segmentation
         if self.cfg.LIDAR_SEG.ENABLED:
-            self.lidar_segmentation = ConvDecoder2D(
-                input_n_channels=state_dim,
+            # self.lidar_segmentation = ConvDecoder2D(
+            #     input_n_channels=state_dim,
+            #     out_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
+            #     n_basic_conv=1,
+            #     head='lidar_seg',
+            # )
+            self.lidar_segmentation = StyleDecoder2D(
+                latent_n_channels=state_dim,
                 out_n_channels=self.cfg.LIDAR_SEG.N_CLASSES,
+                constant_size=(4, 64),
                 n_basic_conv=1,
                 head='lidar_seg',
             )
 
         # camera semantic segmentation
         if self.cfg.SEMANTIC_IMAGE.ENABLED:
-            self.sem_image_decoder = ConvDecoder2D(
-                input_n_channels=state_dim,
+            # self.sem_image_decoder = ConvDecoder2D(
+            #     input_n_channels=state_dim,
+            #     out_n_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
+            #     n_basic_conv=2,
+            #     head='sem_image',
+            # )
+            self.sem_image_decoder = StyleDecoder2D(
+                latent_n_channels=state_dim,
                 out_n_channels=self.cfg.SEMANTIC_IMAGE.N_CLASSES,
-                n_basic_conv=1,
+                constant_size=(10, 26),
+                n_basic_conv=2,
                 head='sem_image',
             )
 
         # depth camera prediction
         if self.cfg.DEPTH.ENABLED:
-            self.depth_image_decoder = ConvDecoder2D(
-                input_n_channels=state_dim,
+            # self.depth_image_decoder = ConvDecoder2D(
+            #     input_n_channels=state_dim,
+            #     out_n_channels=1,
+            #     n_basic_conv=2,
+            #     head='depth',
+            # )
+            self.depth_image_decoder = StyleDecoder2D(
+                latent_n_channels=state_dim,
                 out_n_channels=1,
-                n_basic_conv=1,
+                constant_size=(10, 26),
+                n_basic_conv=2,
                 head='depth',
             )
 
@@ -222,6 +264,12 @@ class MUVO(nn.Module):
                 out_n_channels=self.cfg.VOXEL_SEG.N_CLASSES,
                 latent_n_channels=self.cfg.VOXEL_SEG.DIMENSION,
             )
+            # self.voxel_decoder = StyleDecoder3D(
+            #     latent_n_channels=state_dim,
+            #     out_n_channels=self.cfg.VOXEL_SEG.N_CLASSES,
+            #     feature_channels=self.cfg.VOXEL_SEG.DIMENSION,
+            #     constant_size=(12, 12, 4),
+            # )
 
         # Used during deployment to save last state
         self.last_h = None
@@ -392,7 +440,7 @@ class MUVO(nn.Module):
 
         # reconstruction
         if self.cfg.SEMANTIC_SEG.ENABLED:
-            bev_decoder_output = self.bev_decoder(self.bev_fc(state))
+            bev_decoder_output = self.bev_decoder(F.max_pool3d(voxel_state, (1, 1, 4)).squeeze())
             bev_decoder_output = unpack_sequence_dim(bev_decoder_output, b, s)
             output = {**output, **bev_decoder_output}
 

@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
+import timm
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 from constants import SEMANTIC_SEG_WEIGHTS, VOXEL_SEG_WEIGHTS
 
@@ -412,3 +414,75 @@ class DiceLoss(nn.Module):
         loss = 1 - d
 
         return loss.mean()
+
+
+class PerceptualLoss(nn.Module):
+    def __init__(self, norm, model='resnet18', mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        super().__init__()
+        self.model = timm.create_model(model, pretrained=True, features_only=True, out_indices=[1, 2, 3, 4])
+        self.model.eval()
+        self.model.requires_grad_(False)
+
+        if norm == 1:
+            self.loss_fn = F.l1_loss
+        elif norm == 2:
+            self.loss_fn = F.mse_loss
+        else:
+            raise ValueError(f'Expected norm 1 or 2, but got norm={norm}')
+
+        self.register_buffer('image_mean', torch.tensor(mean).unsqueeze(1).unsqueeze(1))
+        self.register_buffer('image_std', torch.tensor(std).unsqueeze(1).unsqueeze(1))
+
+    def forward(self, prediction, target, feature_layers=[0, 1, 2, 3], style_layers=[], feature_weight=1, style_weight=1):
+        b, s, c, h, w = prediction.shape
+
+        prediction = prediction.view(b * s, c, h, w)
+        target = target.view(b * s, c, h, w)
+
+        prediction = (prediction - self.image_mean) / self.image_std
+        target = (target - self.image_mean) / self.image_std
+        pre_features = self.model(prediction)
+        tgt_features = self.model(target)
+
+        feature_loss = 0.0
+        for layer in feature_layers:
+            feature_loss += self.loss_fn(pre_features[layer], tgt_features[layer])
+
+        style_loss = 0.0
+        for layer in style_layers:
+            pre_gram = self.gram_matrix(pre_features[layer])
+            tgt_gram = self.gram_matrix(tgt_features[layer])
+            style_loss += self.loss_fn(pre_gram, tgt_gram)
+        # loss = self.loss_fn(pre_features, tgt_features, reduction='none')
+
+        # Sum channel dimension
+        # loss = torch.sum(loss, dim=-3, keepdims=True)
+        loss = feature_weight * feature_loss + style_weight * style_loss
+        return loss
+
+    def gram_matrix(self, x):
+        b, c, h, w = x.size()
+        act_x = x.reshape(b, c, -1)
+        gram_x = torch.bmm(act_x, act_x.transpose(1, 2)) / (c * h * w)
+        return gram_x
+
+
+class LPIPSLoss(nn.Module):
+    def __init__(self, model='vgg', mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        super().__init__()
+        self.lpips = LearnedPerceptualImagePatchSimilarity(net_type=model)
+
+        self.register_buffer('image_mean', torch.tensor(mean).unsqueeze(1).unsqueeze(1))
+        self.register_buffer('image_std', torch.tensor(std).unsqueeze(1).unsqueeze(1))
+
+    def forward(self, prediction, target):
+        b, s, c, h, w = prediction.shape
+
+        prediction = prediction.view(b * s, c, h, w)
+        target = target.view(b * s, c, h, w)
+
+        prediction = (prediction - self.image_mean) / self.image_std
+        target = (target - self.image_mean) / self.image_std
+
+        loss = self.lpips(prediction, target)
+        return loss

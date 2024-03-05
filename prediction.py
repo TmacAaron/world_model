@@ -4,8 +4,8 @@ import time
 from tqdm import tqdm
 
 import torch
-from torch.utils.tensorboard.writer import SummaryWriter
-# import lightning.pytorch as pl
+# from torch.utils.tensorboard.writer import SummaryWriter
+import lightning.pytorch as pl
 import numpy as np
 
 from muvo.config import get_parser, get_cfg
@@ -46,8 +46,9 @@ def main():
     pbar = tqdm(total=len(dataloader),  desc='Prediction')
     model.cuda()
 
-    model.train()
-    for module in model.modules():
+    model.eval()
+    model.model.train()
+    for module in model.model.modules():
         if isinstance(module, torch.nn.Dropout):
             module.eval()
 

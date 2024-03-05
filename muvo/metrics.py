@@ -243,19 +243,54 @@ class CDMetric:
     def add_batch(self, prediction, target):
         self.count += 1
         # dist = CDLoss.batch_pairwise_dist(prediction.float(), target.float()).cpu().numpy()
-        dist = torch.cdist(prediction.float(), target.float(), 2)
+        b = prediction.shape[0]
+        cdist = 0
+        cdist_in = 0
+        for i in range(b):
+            cost = self.cf(prediction[i][None], target[i][None])
+            cdist += cost.mean()
+
+            PC_RANGE = [-20.0, -20.0, -2, 20.0, 20.0, 6]
+            mask1 = torch.logical_and(PC_RANGE[0] <= prediction[i][:, 0],
+                                      prediction[i][:, 0] <= PC_RANGE[3])
+            mask2 = torch.logical_and(PC_RANGE[1] <= prediction[i][:, 1],
+                                      prediction[i][:, 1] <= PC_RANGE[4])
+            mask3 = torch.logical_and(PC_RANGE[2] <= prediction[i][:, 2],
+                                      prediction[i][:, 2] <= PC_RANGE[5])
+            inner_mask_pred = mask1 & mask2 & mask3
+            pred_inner = prediction[i][inner_mask_pred][None]
+
+            mask1 = torch.logical_and(PC_RANGE[0] <= target[i][:, 0],
+                                      target[i][:, 0] <= PC_RANGE[3])
+            mask2 = torch.logical_and(PC_RANGE[1] <= target[i][:, 1],
+                                      target[i][:, 1] <= PC_RANGE[4])
+            mask3 = torch.logical_and(PC_RANGE[2] <= target[i][:, 2],
+                                      target[i][:, 2] <= PC_RANGE[5])
+            inner_mask_gt = mask1 & mask2 & mask3
+            gt_inner = target[i][inner_mask_gt][None]
+            cost_in = self.cf(pred_inner, gt_inner)
+            cdist_in += cost_in.mean()
+
+        self.total_cost += cdist / b
+        self.total_cost_in += cdist_in / b
+        self.avg_cost = self.total_cost / self.count
+        self.avg_cost_in = self.total_cost_in / self.count
+
+    def cf(self, pred, gt):
+        dist = torch.cdist(pred.float(), gt.float(), 2)
         dl, dr = dist.min(1)[0], dist.min(2)[0]
         cost = (self.reducer(dl, dim=1) + self.reducer(dr, dim=1)) / 2
-        self.total_cost += cost.mean()
-        self.avg_cost = self.total_cost / self.count
+        return cost
 
     def get_stat(self):
-        return float(self.avg_cost)
+        return float(self.avg_cost), float(self.avg_cost_in)
 
     def reset(self):
         self.total_cost = 0
+        self.total_cost_in = 0
         self.count = 1e-8
         self.avg_cost = 0
+        self.avg_cost_in = 0
 
 
 class CDMetric0:
