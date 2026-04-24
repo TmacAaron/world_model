@@ -19,3 +19,6 @@ python prediction.py --config-file mile/configs/prediction.yml
 ```
 The config file is the same as in training.\
 In file 'mile/data/dataset.py', class 'DataModule', function 'setup', you can change the predict_dataset/sampler type.
+
+## publication
+This thesis contributed to the following paper: https://ieeexplore.ieee.org/document/11097718
